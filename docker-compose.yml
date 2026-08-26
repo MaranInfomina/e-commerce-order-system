@@ -1,4 +1,30 @@
 services:
+  php-fpm:
+    build: ./src/backend
+    environment:
+      APP_NAME: ${APP_NAME:-COE Order System}
+      APP_ENV: ${APP_ENV:-local}
+      APP_KEY: ${APP_KEY:-}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      CACHE_STORE: ${CACHE_STORE:-file}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-coe_orders}
+      DB_USERNAME: ${DB_USERNAME:-coe}
+      DB_PASSWORD: ${DB_PASSWORD:-local_dev_only}
+      DB_TEST_DATABASE: ${POSTGRES_TEST_DB:-coe_orders_test}
+    volumes:
+      - ./src/backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -18,3 +44,4 @@ services:
 
 volumes:
   pgdata:
+  backend_vendor:
