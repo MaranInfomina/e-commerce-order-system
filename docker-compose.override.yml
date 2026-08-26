@@ -6,6 +6,7 @@ services:
     environment:
       NODE_ENV: development
       CHOKIDAR_USEPOLLING: "true"
+      APP_PORT: ${APP_PORT:-8080}
     volumes:
       - ./src/frontend:/app
       - frontend_node_modules:/app/node_modules

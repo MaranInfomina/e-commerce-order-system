@@ -21,7 +21,8 @@ export default defineNuxtConfig({
     server: {
       hmr: {
         // The browser talks to nginx on APP_PORT, not directly to 3000.
-        clientPort: 8080,
+        // Read from the environment so a non-default APP_PORT still works.
+        clientPort: Number(process.env.APP_PORT ?? 8080),
       },
     },
   },
