@@ -7,6 +7,7 @@ services:
       - ./src/backend:/var/www/html
     depends_on:
       - php-fpm
+      - nuxt
 
   php-fpm:
     build: ./src/backend
@@ -50,6 +51,16 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+
+  nuxt:
+    build:
+      context: ./src/frontend
+      target: prod
+    environment:
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_BASE_SERVER: http://nginx/api/v1
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: "3000"
 
 volumes:
   pgdata:
