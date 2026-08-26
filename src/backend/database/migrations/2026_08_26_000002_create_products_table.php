@@ -34,6 +34,11 @@ return new class extends Migration
             'ALTER TABLE products ADD CONSTRAINT products_stock_quantity_non_negative '
             .'CHECK (stock_quantity >= 0)'
         );
+
+        DB::statement(
+            'ALTER TABLE products ADD CONSTRAINT products_price_cents_non_negative '
+            .'CHECK (price_cents >= 0)'
+        );
     }
 
     public function down(): void
