@@ -31,6 +31,8 @@ services:
     volumes:
       - ./src/backend:/var/www/html
       - backend_vendor:/var/www/html/vendor
+      - backend_storage_framework:/var/www/html/storage/framework
+      - backend_bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,3 +67,5 @@ services:
 volumes:
   pgdata:
   backend_vendor:
+  backend_storage_framework:
+  backend_bootstrap_cache:

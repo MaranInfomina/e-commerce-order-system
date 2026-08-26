@@ -12,6 +12,19 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
+# The ./src/backend bind mount presents as root:root on Docker Desktop for
+# Windows and chown against it is a silent no-op, but php-fpm's workers run
+# as www-data. These directories are overlaid with named volumes in
+# docker-compose.yml, which are seeded from the image (including ownership)
+# when the container is first created.
+RUN mkdir -p \
+      storage/framework/cache/data \
+      storage/framework/sessions \
+      storage/framework/views \
+      storage/framework/testing \
+      bootstrap/cache \
+ && chown -R www-data:www-data storage bootstrap/cache
+
 # php-fpm's own image already listens on 0.0.0.0:9000.
 EXPOSE 9000
 
