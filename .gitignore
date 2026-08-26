@@ -1,7 +1,7 @@
 # Working notes and design specs generated during brainstorming.
 # Local-only: not part of the delivered repo.
 docs/superpowers/
-
+docs/adr
 # Environment / secrets
 .env
 .env.local
