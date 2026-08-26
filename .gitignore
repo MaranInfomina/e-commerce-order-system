@@ -2,14 +2,28 @@
 # Local-only: not part of the delivered repo.
 docs/superpowers/
 docs/adr
+
 # Environment / secrets
 .env
 .env.local
 .env.*.local
 
-# OS / editor cruft
-.DS_Store
-Thumbs.db
+# Backend dependencies and build output
+src/backend/vendor/
+src/backend/storage/*.key
+src/backend/public/storage
+src/backend/.phpunit.result.cache
+
+# Frontend dependencies and build output
+src/frontend/node_modules/
+src/frontend/.nuxt/
+src/frontend/.output/
+src/frontend/.data/
+src/frontend/dist/
 
 # Git worktrees created for isolated task execution
 .claude/worktrees/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
