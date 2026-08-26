@@ -1,0 +1,12 @@
+# Working notes and design specs generated during brainstorming.
+# Local-only: not part of the delivered repo.
+docs/superpowers/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
