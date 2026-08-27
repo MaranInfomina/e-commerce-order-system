@@ -37,7 +37,17 @@
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync" force="true"/>
-        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <!-- SESSION_DRIVER is deliberately NOT forced, for exactly the
+             reason CACHE_STORE is not forced above. docker-compose.yml sets
+             SESSION_DRIVER=redis and the task's "Produces" line claims it,
+             but a forced `array` here makes that claim untestable: the suite
+             would assert phpunit's own literal instead of what the container
+             is configured to do, and forgetting the compose variable would
+             leave every test green. Letting the container value flow through
+             is the only arrangement in which SessionDriverGuardTest can fail
+             when the driver is wrong. Sessions then really do write to Redis
+             during tests, which is why REDIS_SESSION_DB is forced to a
+             dedicated test index below and flushed by tests/Pest.php. -->
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false" force="true"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
@@ -51,8 +61,9 @@
         <env name="REDIS_URL" value="" force="true"/>
         <env name="REDIS_DB" value="15" force="true"/>
         <env name="REDIS_CACHE_DB" value="14" force="true"/>
+        <env name="REDIS_SESSION_DB" value="13" force="true"/>
         <env name="CACHE_PREFIX" value="" force="true"/>
-        <!-- These three need a <server> mirror, not just <env>: phpdotenv
+        <!-- These five need a <server> mirror, not just <env>: phpdotenv
              reads $_SERVER before $_ENV and getenv(), PHPUnit's <env>
              only calls putenv(), and Compose already places every
              variable it injects into $_SERVER. Without the mirror the
@@ -61,12 +72,12 @@
         <server name="REDIS_URL" value="" force="true"/>
         <server name="REDIS_DB" value="15" force="true"/>
         <server name="REDIS_CACHE_DB" value="14" force="true"/>
+        <server name="REDIS_SESSION_DB" value="13" force="true"/>
         <server name="CACHE_PREFIX" value="" force="true"/>
         <server name="APP_ENV" value="testing" force="true"/>
         <server name="DB_CONNECTION" value="pgsql" force="true"/>
         <!-- DB_DATABASE is intentionally not forced here either — see the
              matching comment in the <env> block above. -->
-        <server name="SESSION_DRIVER" value="array" force="true"/>
         <server name="QUEUE_CONNECTION" value="sync" force="true"/>
     </php>
 </phpunit>

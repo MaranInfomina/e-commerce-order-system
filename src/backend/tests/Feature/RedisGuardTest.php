@@ -53,3 +53,28 @@ it('writes a cache entry that is genuinely visible in redis with a ttl', functio
 
     expect($ttl)->toBeGreaterThan(0)->toBeLessThanOrEqual(60);
 });
+
+it('applies the retry and backoff options to every redis connection', function () {
+    // config/database.php puts these in `options`, which
+    // PhpRedisConnector::connect() merges into every connection. "Merged into
+    // the config array" and "set on the client" are different claims though,
+    // so read them back off the live phpredis client rather than off config().
+    //
+    // Without them a single dropped packet is an immediate exception on a
+    // user-visible request, now that the cache, sessions, carts and the JWT
+    // denylist all live here. With them phpredis retries the transport and
+    // still throws once the attempts are exhausted — fail-closed behaviour is
+    // preserved, only the window is narrowed.
+    foreach (['default', 'cache', 'session', 'test'] as $name) {
+        $client = Redis::connection($name)->client();
+
+        expect((int) $client->getOption(\Redis::OPT_MAX_RETRIES))
+            ->toBe(3, "{$name} has no retry budget");
+        expect((int) $client->getOption(\Redis::OPT_BACKOFF_ALGORITHM))
+            ->toBe(\Redis::BACKOFF_ALGORITHM_DECORRELATED_JITTER, "{$name} has the wrong backoff algorithm");
+        expect((int) $client->getOption(\Redis::OPT_BACKOFF_BASE))
+            ->toBe(100, "{$name} has the wrong backoff base");
+        expect((int) $client->getOption(\Redis::OPT_BACKOFF_CAP))
+            ->toBe(1000, "{$name} has the wrong backoff cap");
+    }
+});

@@ -7,10 +7,15 @@ FROM php:8.4-fpm-alpine
 # phpredis is the client config/database.php names (REDIS_CLIENT=phpredis).
 # It is a PECL extension, not a bundled one, so it is compiled here; without
 # it every Redis connection dies with `Class "Redis" not found`.
+#
+# Pinned. An unpinned `pecl install redis` floats to whatever is current at
+# build time, so two builds of the same commit can ship different clients and
+# a phpredis regression arrives without a diff. 6.3.0 is the version this
+# milestone was developed and tested against; bump it deliberately.
 RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
  && apk add --no-cache postgresql-libs icu-libs git unzip \
  && docker-php-ext-install pdo_pgsql bcmath intl opcache \
- && pecl install redis \
+ && pecl install redis-6.3.0 \
  && docker-php-ext-enable redis \
  && rm -rf /tmp/pear \
  && apk del .build-deps

@@ -20,6 +20,7 @@ services:
       LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
       CACHE_STORE: ${CACHE_STORE:-redis}
       SESSION_DRIVER: ${SESSION_DRIVER:-redis}
+      SESSION_CONNECTION: ${SESSION_CONNECTION:-session}
       QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
       DB_CONNECTION: ${DB_CONNECTION:-pgsql}
       DB_HOST: ${DB_HOST:-postgres}
@@ -32,6 +33,8 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_CACHE_DB: ${REDIS_CACHE_DB:-0}
       REDIS_DB: ${REDIS_DB:-1}
+      REDIS_SESSION_DB: ${REDIS_SESSION_DB:-2}
+      REDIS_TEST_DB: ${REDIS_TEST_DB:-15}
       CACHE_PREFIX: ${CACHE_PREFIX:-}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}

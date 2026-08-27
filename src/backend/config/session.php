@@ -73,7 +73,14 @@ return [
     |
     */
 
-    'connection' => env('SESSION_CONNECTION'),
+    // Defaulted to the dedicated `session` Redis connection rather than
+    // left null. Null means the redis session driver uses the `default`
+    // connection, which is logical database 1 — carts and the JWT denylist,
+    // documented in config/database.php as never flushed wholesale. Session
+    // payloads do not belong in a database with that contract, and an
+    // env-only default would put them there for anyone running without the
+    // compose environment.
+    'connection' => env('SESSION_CONNECTION', 'session'),
 
     /*
     |--------------------------------------------------------------------------

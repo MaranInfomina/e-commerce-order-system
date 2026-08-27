@@ -41,6 +41,7 @@ output:
 | `php-fpm` | Laravel API | internal only |
 | `nuxt` | Nuxt SSR frontend | internal only |
 | `postgres` | PostgreSQL 16 | internal only |
+| `redis` | Redis 7. Cache and session store | internal only |
 
 Only nginx publishes a port, so the whole app is one origin and needs no CORS.
 

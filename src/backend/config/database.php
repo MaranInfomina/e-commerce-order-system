@@ -146,12 +146,37 @@ return [
 
         'client' => env('REDIS_CLIENT', 'phpredis'),
 
+        // Everything in `options` is merged into every connection below by
+        // PhpRedisConnector::connect(), so these four resiliency settings and
+        // `persistent` apply to all of them without being repeated.
+        //
+        // The retry settings are restored deliberately. Laravel's stock
+        // config/database.php ships them and this file's Milestone 2 rewrite
+        // dropped them, which mattered more than it looked: from this
+        // milestone on the cache, sessions, carts and the JWT denylist all
+        // live in Redis, so a single dropped packet that used to be retried
+        // silently is now a 5xx on a user-visible request.
+        //
+        // These do NOT turn a fail-closed guard into a fail-open one. They
+        // retry the *transport* — up to 3 attempts with decorrelated jitter
+        // between 100ms and 1s — and when the attempts are exhausted phpredis
+        // still throws. The auth guard's denylist lookup therefore still lets
+        // the error propagate rather than treating "Redis unreachable" as
+        // "token not revoked"; the retries only shorten the window in which a
+        // blip becomes an outage.
         'options' => [
             'cluster' => env('REDIS_CLUSTER', 'redis'),
             'prefix' => env('REDIS_PREFIX', 'coe_'),
+            'persistent' => env('REDIS_PERSISTENT', false),
+            'max_retries' => env('REDIS_MAX_RETRIES', 3),
+            'backoff_algorithm' => env('REDIS_BACKOFF_ALGORITHM', 'decorrelated_jitter'),
+            'backoff_base' => env('REDIS_BACKOFF_BASE', 100),
+            'backoff_cap' => env('REDIS_BACKOFF_CAP', 1000),
         ],
 
-        // Carts and the JWT denylist. Never flushed wholesale.
+        // Carts and the JWT denylist. Never flushed wholesale, and nothing
+        // else is allowed in here — sessions have their own connection below
+        // precisely so that stays true.
         'default' => [
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
@@ -171,7 +196,24 @@ return [
             'database' => env('REDIS_CACHE_DB', '0'),
         ],
 
-        // Tests. Flushed between every test by tests/Pest.php.
+        // Sessions only. config/session.php defaults SESSION_CONNECTION to
+        // this connection: with no connection named, Laravel's redis session
+        // driver falls back to `default`, dumping session payloads into the
+        // carts + denylist database that is documented as never flushed
+        // wholesale. Logging every user out is a routine operation; emptying
+        // every cart is not, and they must not share a blast radius.
+        'session' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_SESSION_DB', '2'),
+        ],
+
+        // Carts and the JWT denylist under test — the `default` connection's
+        // mirror. Flushed between every test by tests/Pest.php, along with
+        // the test indexes phpunit.xml forces onto `cache` and `session`.
         'test' => [
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
