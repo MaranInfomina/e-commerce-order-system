@@ -30,7 +30,13 @@ class ProductListQuery
     public function apply(Builder $query, array $filters): Builder
     {
         if (! empty($filters['search'])) {
-            $term = '%'.$filters['search'].'%';
+            // Escape LIKE metacharacters in the user's term so a literal
+            // "%" or "_" is matched literally instead of acting as a
+            // wildcard — otherwise a single "%" or "_" search matches every
+            // row. Postgres LIKE/ILIKE uses backslash as the default escape
+            // character, so no ESCAPE clause is required.
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $filters['search']);
+            $term = '%'.$escaped.'%';
 
             $query->where(function (Builder $inner) use ($term) {
                 $inner->where('name', 'ILIKE', $term)
@@ -57,7 +63,11 @@ class ProductListQuery
             $query->where('price_cents', '<=', (int) $filters['max_price']);
         }
 
-        [$column, $direction] = self::SORTS[$filters['sort'] ?? self::DEFAULT_SORT];
+        // apply() is public and only guaranteed to see a validated 'sort'
+        // when called through ProductIndexRequest — fall back rather than
+        // risk an "Undefined array key" on an unvetted caller.
+        $sortKey = $filters['sort'] ?? self::DEFAULT_SORT;
+        [$column, $direction] = self::SORTS[$sortKey] ?? self::SORTS[self::DEFAULT_SORT];
 
         // Tie-break on id so pagination is stable when the sort column repeats.
         return $query->orderBy($column, $direction)->orderBy('id', 'asc');

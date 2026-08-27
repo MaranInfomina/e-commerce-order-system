@@ -29,14 +29,35 @@ it('honours a per_page within range and rejects one above the maximum', function
         ->assertJsonStructure(['error' => ['details' => ['per_page']]]);
 });
 
-it('searches name and description case-insensitively', function () {
+it('searches name and description case-insensitively, matching only the intended products', function () {
     Product::factory()->create(['name' => 'Titanium Kettle', 'description' => 'boils water']);
     Product::factory()->create(['name' => 'Copper Pan', 'description' => 'holds TITANIUM coating']);
     Product::factory()->create(['name' => 'Wooden Spoon', 'description' => 'stirs things']);
 
-    $response = getJson('/api/v1/products?search=titanium')->assertOk();
+    // sort=name makes the row order deterministic so we can assert exactly
+    // which two products matched, not merely how many.
+    $response = getJson('/api/v1/products?search=titanium&sort=name')->assertOk();
 
     expect($response->json('meta.total'))->toBe(2);
+    expect($response->json('data.*.name'))->toBe(['Copper Pan', 'Titanium Kettle']);
+});
+
+it('escapes literal LIKE metacharacters in the search term instead of treating them as wildcards', function () {
+    Product::factory()->create(['name' => 'Cable 50% Off', 'description' => 'a discounted cable']);
+    Product::factory()->create(['name' => 'Regular Cable', 'description' => 'a full price cable']);
+
+    // A literal '%' in the search term must match only the row whose text
+    // actually contains '%' — not act as a SQL wildcard matching every row.
+    getJson('/api/v1/products?search='.urlencode('%'))
+        ->assertOk()
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('data.0.name', 'Cable 50% Off');
+
+    // A literal '_' must match nothing here — not act as a single-character
+    // wildcard matching every row.
+    getJson('/api/v1/products?search='.urlencode('_'))
+        ->assertOk()
+        ->assertJsonPath('meta.total', 0);
 });
 
 it('filters by category slug and by active status', function () {
@@ -65,6 +86,19 @@ it('applies inclusive price bounds that combine', function () {
     getJson('/api/v1/products?min_price=1000')->assertJsonPath('meta.total', 3);
     getJson('/api/v1/products?max_price=5000')->assertJsonPath('meta.total', 3);
     getJson('/api/v1/products?min_price=1000&max_price=5000')->assertJsonPath('meta.total', 2);
+});
+
+it('rejects a min_price greater than max_price instead of silently returning no results', function () {
+    // The gte:min_price rule on max_price is only conditionally applied
+    // (Rule::when($this->filled('min_price'), ...)) so that max_price alone
+    // is not wrongly rejected — see ProductIndexRequest. This test proves
+    // that conditional wrapper still enforces the ordering it exists for
+    // when both bounds are present, which is the property most likely to
+    // be disabled by accident in a future edit to that condition.
+    getJson('/api/v1/products?min_price=5000&max_price=1000')
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+        ->assertJsonStructure(['error' => ['details' => ['max_price']]]);
 });
 
 it('sorts by each allowed key in both directions', function () {
