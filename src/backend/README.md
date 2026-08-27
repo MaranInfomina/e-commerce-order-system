@@ -1,58 +1,87 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Backend — Laravel API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 13.29.0 on PHP 8.4, served by php-fpm behind the root nginx edge.
 
-## About Laravel
+## Running commands
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Nothing here runs on the host. Every command goes through the container:
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+docker compose exec php-fpm php artisan route:list --path=api
+docker compose exec php-fpm ./vendor/bin/pest
+docker compose exec php-fpm composer require <package>
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Structure
 
-## Contributing
+| Path | Responsibility |
+|---|---|
+| `routes/api.php` | The complete API surface |
+| `Exceptions/ApiExceptionRenderer.php` | The only place error shape is decided |
+| `Queries/ProductListQuery.php` | Search, filter, sort. `SORTS` is the single source of truth for allowed sort keys |
+| `Http/Requests/` | Input validation |
+| `Http/Resources/` | Response serialization |
+| `Models/` | Eloquent models |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Configuration
 
-## Code of Conduct
+Config comes from container environment variables injected by Compose from the
+root `.env`. **Do not create a `.env` file here** — it would shadow those
+values and drift out of sync.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+`LOG_CHANNEL` must stay `stderr`. Only `storage/framework` and
+`bootstrap/cache` are mounted as named volumes writable by `www-data`;
+`storage/logs` is not writable in the container. Setting `LOG_CHANNEL=daily`
+reproduces a 500 error that Task 5b already fixed once — writes to
+`storage/logs` fail.
 
-## Security Vulnerabilities
+## Testing
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Pest, running against the separate `coe_orders_test` database created by
+`infra/postgres/init/01-create-test-db.sh`. Tests use real PostgreSQL rather
+than SQLite so that check constraints and `ILIKE` behave exactly as in
+production.
 
-## License
+```bash
+docker compose exec php-fpm ./vendor/bin/pest
+docker compose exec php-fpm ./vendor/bin/pest --filter=health
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Schema notes
+
+- **Money is `price_cents`, an integer.** Milestone 3 stores a pricing snapshot on each order, and integers make rounding error impossible. Formatting is the frontend's job.
+- **`stock_quantity` has a database check constraint** (`products_stock_quantity_non_negative`) as well as request validation. Milestone 3's concurrency-safe decrement will rely on it.
+- **Products are soft-deleted.** Milestone 3 adds orders that reference products; a hard delete would break order history.
+
+## Known limitation: search
+
+`search` uses `ILIKE '%term%'` across name and description. No btree index can
+serve a leading-wildcard match, so this is a sequential scan and will degrade
+as the catalog grows. Acceptable at Milestone 1 volumes.
+
+The upgrade path when it matters: enable the `pg_trgm` extension and add a GIN
+trigram index on the searched columns, or move to a `tsvector` column with a
+GIN index for full-text search.
+
+## Seeding
+
+`DatabaseSeeder` is not idempotent — it's built for `migrate:fresh --seed`
+and creates rows via factories every time it runs. Running
+`php artisan db:seed` on its own appends a second 6 categories and 50
+products on top of whatever already exists. The cold-start entrypoint uses
+the guarded `php artisan app:seed-if-empty` instead, which only seeds when
+the `products` table is empty; prefer that command over `db:seed` when
+you need a safe, repeatable seed from the shell.
+
+## Environment variable pitfall
+
+`POSTGRES_DB` (read by the `postgres` container) and `DB_DATABASE` (read by
+Laravel) both default to `coe_orders` independently — they are not the same
+variable. Overriding only one in `.env` silently points Laravel at a
+database Postgres was never told to create.
+
+## Two API behaviours that look like bugs and are not
+
+- `is_active` as a query parameter takes `1` or `0`, not `true`/`false`
+  (Laravel's `boolean` validation rule).
+- An unrecognized `category` slug returns **422**, not an empty list.
