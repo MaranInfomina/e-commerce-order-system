@@ -63,17 +63,22 @@
         <env name="REDIS_CACHE_DB" value="14" force="true"/>
         <env name="REDIS_SESSION_DB" value="13" force="true"/>
         <env name="CACHE_PREFIX" value="" force="true"/>
-        <!-- These five need a <server> mirror, not just <env>: phpdotenv
+        <env name="JWT_SECRET" value="testing-secret-not-used-outside-the-suite" force="true"/>
+        <!-- These six need a <server> mirror, not just <env>: phpdotenv
              reads $_SERVER before $_ENV and getenv(), PHPUnit's <env>
              only calls putenv(), and Compose already places every
              variable it injects into $_SERVER. Without the mirror the
              <env> value is silently ignored and the test cache lands on
-             development database 0. -->
+             development database 0. JWT_SECRET is the same trap:
+             docker-compose.yml injects it as an empty string, so without
+             the mirror config('jwt.secret') resolves to "" under the suite
+             and the TokenService binding refuses to construct. -->
         <server name="REDIS_URL" value="" force="true"/>
         <server name="REDIS_DB" value="15" force="true"/>
         <server name="REDIS_CACHE_DB" value="14" force="true"/>
         <server name="REDIS_SESSION_DB" value="13" force="true"/>
         <server name="CACHE_PREFIX" value="" force="true"/>
+        <server name="JWT_SECRET" value="testing-secret-not-used-outside-the-suite" force="true"/>
         <server name="APP_ENV" value="testing" force="true"/>
         <server name="DB_CONNECTION" value="pgsql" force="true"/>
         <!-- DB_DATABASE is intentionally not forced here either — see the

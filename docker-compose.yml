@@ -35,6 +35,8 @@ services:
       REDIS_DB: ${REDIS_DB:-1}
       REDIS_SESSION_DB: ${REDIS_SESSION_DB:-2}
       REDIS_TEST_DB: ${REDIS_TEST_DB:-15}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_TTL: ${JWT_TTL:-3600}
       CACHE_PREFIX: ${CACHE_PREFIX:-}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}

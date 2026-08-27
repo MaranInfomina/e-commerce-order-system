@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\TokenService;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,7 +12,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(TokenService::class, fn () => new TokenService(
+            secret: (string) config('jwt.secret'),
+            ttl: (int) config('jwt.ttl'),
+            algo: (string) config('jwt.algo'),
+        ));
     }
 
     /**
