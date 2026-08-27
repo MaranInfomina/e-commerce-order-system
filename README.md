@@ -244,21 +244,6 @@ docker compose exec php-fpm php artisan migrate --force
   e.g. `-v "$(pwd)/src:/app"` — otherwise Git Bash rewrites the container
   side of the path as if it were a Windows path.
 
-- **Run `./scripts/test.sh` (or `./setup.sh`) at least once before trusting
-  a bare `docker compose up` for testing.** With no `APP_KEY` in `.env`, the
-  entrypoint generates an ephemeral key for the running `php-fpm` process,
-  but a separate `docker compose exec` session (which is how both
-  `scripts/test.sh` and `scripts/test.ps1` reach the container) does not
-  inherit it — it sees the empty `APP_KEY` from `.env`/Compose instead. The
-  API itself is unaffected (`/api/*` routes are stateless and never touch
-  Laravel's session encryption, and `/` and `/products` are served by
-  Nuxt), but `Tests\Feature\ExampleTest` — Laravel's own scaffolded test
-  for `GET /`, which does go through the session-encrypting `web`
-  middleware — fails with `MissingAppKeyException` in that state. Running
-  `./setup.sh` first writes a real key into `.env` before the stack
-  (re)starts, so `docker compose exec` sessions see it too, and this does
-  not happen.
-
 ## Layout
 
 ```
