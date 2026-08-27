@@ -14,14 +14,16 @@ docker compose exec php-fpm composer require <package>
 
 ## Structure
 
+All paths below are relative to `src/backend/`:
+
 | Path | Responsibility |
 |---|---|
 | `routes/api.php` | The complete API surface |
-| `Exceptions/ApiExceptionRenderer.php` | The only place error shape is decided |
-| `Queries/ProductListQuery.php` | Search, filter, sort. `SORTS` is the single source of truth for allowed sort keys |
-| `Http/Requests/` | Input validation |
-| `Http/Resources/` | Response serialization |
-| `Models/` | Eloquent models |
+| `app/Exceptions/ApiExceptionRenderer.php` | The only place error shape is decided |
+| `app/Queries/ProductListQuery.php` | Search, filter, sort. `SORTS` is the single source of truth for allowed sort keys |
+| `app/Http/Requests/` | Input validation |
+| `app/Http/Resources/` | Response serialization |
+| `app/Models/` | Eloquent models |
 
 ## Configuration
 
@@ -31,9 +33,11 @@ values and drift out of sync.
 
 `LOG_CHANNEL` must stay `stderr`. Only `storage/framework` and
 `bootstrap/cache` are mounted as named volumes writable by `www-data`;
-`storage/logs` is not writable in the container. Setting `LOG_CHANNEL=daily`
-reproduces a 500 error that Task 5b already fixed once — writes to
-`storage/logs` fail.
+`storage/logs` is not writable in the container, and never has been.
+Setting `LOG_CHANNEL=daily` writes there and reproduces a 500 — the same
+*class* of failure (an unwritable storage path) that an earlier fix cured
+for `storage/framework/views`, but this exact path was never made
+writable.
 
 ## Testing
 
@@ -82,6 +86,8 @@ database Postgres was never told to create.
 
 ## Two API behaviours that look like bugs and are not
 
-- `is_active` as a query parameter takes `1` or `0`, not `true`/`false`
-  (Laravel's `boolean` validation rule).
+- `is_active` as a query parameter takes `1` or `0`. The literal strings
+  `true`/`false` are rejected with 422 (Laravel's `boolean` validation rule
+  accepts `1`, `0`, `"1"`, `"0"`, and actual booleans, but not the words
+  `"true"`/`"false"`).
 - An unrecognized `category` slug returns **422**, not an empty list.

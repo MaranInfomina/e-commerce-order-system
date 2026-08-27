@@ -37,9 +37,11 @@ most common failure in this setup:
 | Browser | `/api/v1` | Same origin through nginx, so no CORS |
 | Server-side render | `http://nginx/api/v1` | A relative URL has no host inside the container |
 
-`resolveApiBase()` in `utils/api.ts` picks between them from
-`import.meta.server`. Both values are set in `nuxt.config.ts` under
-`runtimeConfig`.
+`resolveApiBase(isServer, config)` in `utils/api.ts` is a pure function that
+picks between them given a boolean — it has no Nuxt imports itself.
+`composables/useProductsApi.ts` is the only caller, and passes
+`import.meta.server` as `isServer`. Both base-URL values are set in
+`nuxt.config.ts` under `runtimeConfig`.
 
 ## List state lives in the URL
 
@@ -50,19 +52,31 @@ needed. Changing a filter resets to page 1.
 ## HMR through the proxy
 
 The browser reaches the app on port 8080, but the dev server listens on 3000.
-`vite.server.hmr.clientPort` in `nuxt.config.ts` tells the HMR client where to
-connect. If hot reload stops working, that value and `APP_PORT` have diverged.
+`vite.server.hmr.clientPort` in `nuxt.config.ts` reads `process.env.APP_PORT`
+(falling back to 8080), so it tracks `APP_PORT` automatically — there is
+nothing to keep in sync by hand. The actual failure mode is `APP_PORT` not
+reaching the `nuxt` container at all: `docker-compose.override.yml` forwards
+it via `environment: APP_PORT: ${APP_PORT:-8080}`, so if `.env` was edited
+but the `nuxt` container was never restarted, the running container still
+has the old value baked into its environment and the browser tries to
+connect to the wrong port. `docker compose up -d` after changing `.env` is
+enough to fix it.
 
-`CHOKIDAR_USEPOLLING=true` is set in `docker-compose.yml` because file change
-events do not propagate reliably across a Windows bind mount without it.
+`CHOKIDAR_USEPOLLING=true` is set in `docker-compose.override.yml` (not the
+base `docker-compose.yml`) because file change events do not propagate
+reliably across a Windows bind mount without it.
 
 ## Cold-boot console noise
 
 A fresh `docker compose up` prints five `#app-manifest` pre-transform
 `ERROR` blocks in this container's log during the first startup. This is an
-upstream Nuxt dev-server issue, not a defect in this project — it is
-cosmetic, clears itself on a warm restart, and never shows up in an actual
-HTTP response. Expect it on the very first boot.
+upstream Nuxt dev-server issue (a boot-order race between Nitro writing the
+`#app-manifest` file and Vite's client warmup pre-transforming the import
+that references it), not a defect in this project — it is cosmetic, clears
+itself on a warm restart, and never shows up in an actual HTTP response.
+One mitigation (`vite.server.warmup.clientFiles: []`) was tried and had no
+effect; it was reverted rather than kept as an unproven fix, and the issue
+is accepted as upstream. Expect it on the very first boot.
 
 ## Testing
 
