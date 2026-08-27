@@ -14,12 +14,17 @@ class HealthController extends Controller
             DB::connection()->getPdo();
             $database = 'ok';
         } catch (Throwable) {
+            // Deliberately not disclosing the exception reason here — the
+            // point of this branch is that a caller learns the database is
+            // unreachable, not why (connection string, credentials, etc).
             $database = 'unreachable';
         }
 
+        $healthy = $database === 'ok';
+
         return response()->json([
-            'status' => 'ok',
+            'status' => $healthy ? 'ok' : 'degraded',
             'database' => $database,
-        ], $database === 'ok' ? 200 : 503);
+        ], $healthy ? 200 : 503);
     }
 }
