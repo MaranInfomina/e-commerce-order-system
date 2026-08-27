@@ -27,6 +27,13 @@ class ProductController extends Controller
             ->paginate($request->integer('per_page', 15))
             ->withQueryString();
 
+        // Request::path() is host-free even during SSR, when the request
+        // itself arrives as http://nginx/api/v1/products — without this the
+        // paginator defaults to $request->url() and serializes the internal
+        // container hostname into links.* and meta.path/meta.links on every
+        // server-rendered page (I3).
+        $products->setPath('/'.$request->path());
+
         return ProductResource::collection($products);
     }
 
