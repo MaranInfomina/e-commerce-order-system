@@ -26,6 +26,14 @@ RUN mkdir -p \
  && chown -R www-data:www-data storage bootstrap/cache
 
 # php-fpm's own image already listens on 0.0.0.0:9000.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# Strip carriage returns: a CRLF script fails in Alpine with a misleading
+# "no such file or directory". .gitattributes should prevent this; the sed
+# is the second line of defence.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+ && chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 9000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm", "-F"]

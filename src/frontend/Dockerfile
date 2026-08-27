@@ -2,12 +2,16 @@
 FROM node:22-alpine AS base
 WORKDIR /app
 
-# ---- dev: source bind-mounted, deps in a named volume ----
+# ---- dev: source bind-mounted, deps installed on first boot ----
 FROM base AS dev
 ENV NODE_ENV=development
 ENV HOST=0.0.0.0
 ENV PORT=3000
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+ && chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 3000
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "run", "dev"]
 
 # ---- build: full install and Nitro build ----
