@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import type { Category } from '~/utils/api'
 
 const props = defineProps<{
@@ -15,6 +16,19 @@ const emit = defineEmits<{
 const search = ref(props.search)
 const category = ref(props.category)
 const sort = ref(props.sort)
+
+// The URL is the source of truth. Nuxt reuses this component instance across
+// query-only navigations (its route key never includes the query string), so
+// without this watcher the form would keep showing stale values after Back
+// or Forward moves the URL without remounting the component.
+watch(
+  () => [props.search, props.category, props.sort] as const,
+  ([nextSearch, nextCategory, nextSort]) => {
+    search.value = nextSearch
+    category.value = nextCategory
+    sort.value = nextSort
+  },
+)
 
 function submit() {
   emit('update', {

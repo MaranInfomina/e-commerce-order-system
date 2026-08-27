@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProductListState } from '~/utils/api'
+import { parseApiError, type ProductListState } from '~/utils/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +23,11 @@ const { data: productsResponse, error } = await useAsyncData(
   () => listProducts(state.value),
   { watch: [state] },
 )
+
+// parseApiError never throws, so this always resolves to a renderable
+// message — the API's own wording (e.g. the 422 for an unknown category
+// slug) rather than a single generic string for every failure.
+const apiError = computed(() => (error.value ? parseApiError(error.value) : null))
 
 function applyFilters(update: { search: string, category: string, sort: string }) {
   // Any filter change resets to page 1 — page 4 of a new result set is meaningless.
@@ -57,7 +62,7 @@ function pruneQuery(query: Record<string, unknown>): Record<string, string> {
       @update="applyFilters"
     />
 
-    <p v-if="error" class="error">Could not load products.</p>
+    <p v-if="apiError" class="error">{{ apiError.message }}</p>
 
     <template v-else>
       <p class="count">{{ productsResponse?.meta.total ?? 0 }} products</p>
