@@ -19,8 +19,10 @@ FROM base AS build
 ENV NODE_ENV=development
 COPY package.json package-lock.json ./
 # --legacy-peer-deps: nuxt@3.21.11 ships an optional peer (@nuxt/cli -> @nuxt/schema@^4.4.6)
-# that conflicts with the pinned @nuxt/schema@3.21.11 nuxt itself requires. The lockfile was
-# generated the same way (see package-lock.json / task report); plain `npm ci` rejects it.
+# that conflicts with the pinned @nuxt/schema@3.21.11 nuxt itself requires. With
+# package-lock.json present, npm ci installs exactly what the lockfile records either
+# way — the flag only suppresses npm's ERESOLVE peer-validation error for that upstream
+# inconsistency, it does not change which packages get installed.
 RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build

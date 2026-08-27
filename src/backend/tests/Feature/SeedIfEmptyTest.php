@@ -16,6 +16,8 @@ it('does not seed again when the catalog already has products', function () {
     artisan('app:seed-if-empty')->assertSuccessful();
     $afterFirstRun = Product::count();
 
+    expect($afterFirstRun)->toBeGreaterThan(0);
+
     artisan('app:seed-if-empty')->assertSuccessful();
 
     expect(Product::count())->toBe($afterFirstRun);
