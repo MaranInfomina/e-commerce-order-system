@@ -26,4 +26,9 @@ class ProductController extends Controller
 
         return ProductResource::collection($products);
     }
+
+    public function show(Product $product): ProductResource
+    {
+        return ProductResource::make($product->load('category'));
+    }
 }
