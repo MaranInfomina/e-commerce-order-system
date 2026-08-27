@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildProductQuery, parseApiError, resolveApiBase } from '../utils/api'
+import { buildProductQuery, formatCents, parseApiError, resolveApiBase } from '../utils/api'
 
 const config = {
   apiBaseServer: 'http://nginx/api/v1',
@@ -66,5 +66,45 @@ describe('parseApiError', () => {
 
     expect(result.message).toBe('Something went wrong. Please try again.')
     expect(result.fields).toEqual({})
+  })
+
+  it('defaults fields to an empty object when the envelope has no details, as with NOT_FOUND', () => {
+    const result = parseApiError({
+      data: {
+        error: {
+          code: 'NOT_FOUND',
+          message: 'The requested resource could not be found.',
+        },
+      },
+    })
+
+    expect(result.message).toBe('The requested resource could not be found.')
+    expect(result.fields).toEqual({})
+  })
+})
+
+describe('formatCents', () => {
+  it('formats a normal value', () => {
+    expect(formatCents(204010)).toBe('2040.10')
+  })
+
+  it('formats zero', () => {
+    expect(formatCents(0)).toBe('0.00')
+  })
+
+  it('pads a fractional part under ten cents', () => {
+    expect(formatCents(5)).toBe('0.05')
+  })
+
+  it('formats a value under a full unit but at least ten cents', () => {
+    expect(formatCents(50)).toBe('0.50')
+  })
+
+  it('formats an exact hundred with no rounding drift', () => {
+    expect(formatCents(1999)).toBe('19.99')
+  })
+
+  it('formats a negative value with a sign prefix', () => {
+    expect(formatCents(-150)).toBe('-1.50')
   })
 })
