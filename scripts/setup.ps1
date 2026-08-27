@@ -7,6 +7,8 @@ Write-Host '==> Checking prerequisites'
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw 'Docker is required and was not found.'
 }
+docker compose version | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Docker Compose v2+ is required.' }
 
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env
@@ -22,10 +24,26 @@ docker compose up -d postgres
 if ($LASTEXITCODE -ne 0) { throw 'failed to start postgres' }
 
 Write-Host '==> Waiting for postgres to become healthy'
-$containerId = (docker compose ps -q postgres).Trim()
 $healthy = $false
 for ($i = 0; $i -lt 60; $i++) {
-    $status = (docker inspect --format '{{.State.Health.Status}}' $containerId)
+    $containerId = (docker compose ps -q postgres)
+    if ($containerId) { $containerId = $containerId.Trim() }
+
+    $status = 'starting'
+    if ($containerId) {
+        # `2>$null` on a native command under $ErrorActionPreference = 'Stop' turns
+        # docker inspect's stderr into a terminating error (proven on this host) --
+        # not merely noisy output. Scope ErrorActionPreference down to
+        # SilentlyContinue for just this call so a container that isn't ready yet
+        # (or vanished) degrades to "starting" like the bash twin's
+        # `2>/dev/null || echo starting`, instead of aborting the whole wait loop.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+        $inspected = docker inspect --format '{{.State.Health.Status}}' $containerId 2>$null
+        $ErrorActionPreference = $prevEap
+        if ($inspected) { $status = $inspected }
+    }
+
     if ($status -eq 'healthy') { $healthy = $true; break }
     Start-Sleep -Seconds 2
 }
@@ -52,8 +70,24 @@ if ($envContent -notmatch '(?m)^APP_KEY=base64:') {
     $key = (docker compose run --rm -T php-fpm php artisan key:generate --show) |
         Where-Object { $_ -match '^base64:[A-Za-z0-9+/=]+$' } | Select-Object -First 1
     if (-not $key) { throw 'could not extract an APP_KEY from key:generate output' }
-    $updated = $envContent -replace '(?m)^APP_KEY=.*$', "APP_KEY=$key"
-    Set-Content -Path .env -Value $updated -Encoding utf8 -NoNewline
+
+    # [^\r\n]* (not .*) so a CRLF .env keeps its trailing `\r` on this line instead
+    # of the substitution swallowing it and leaving this one line LF while its
+    # neighbours stay CRLF.
+    $updated = $envContent -replace '(?m)^APP_KEY=[^\r\n]*', "APP_KEY=$key"
+
+    # Set-Content -Encoding utf8 under PS 5.1 (no utf8NoBOM here) writes a UTF-8
+    # BOM, silently changing .env's byte format -- the bash path leaves every byte
+    # but the key line untouched. Write the exact bytes instead.
+    [IO.File]::WriteAllText((Resolve-Path .env), $updated, (New-Object Text.UTF8Encoding $false))
+
+    # -replace above silently no-ops if .env had no APP_KEY= line to match at all
+    # (a hand-edited or truncated .env). Don't sail into migrate/seed and a
+    # "Setup complete" banner while the app is actually running on the
+    # entrypoint's ephemeral, restart-losing key.
+    if (-not (Select-String -Path .env -Pattern '(?m)^APP_KEY=base64:' -Quiet)) {
+        throw 'ERROR: failed to write APP_KEY into .env'
+    }
 }
 
 # Deliberately NOT `migrate --force --seed`: the entrypoint invoked above
@@ -74,12 +108,20 @@ if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
 
 Write-Host '==> Starting the full stack'
 docker compose up -d
+if ($LASTEXITCODE -ne 0) { throw 'failed to start the full stack' }
+
+# docker-compose.yml maps "${APP_PORT:-8080}:80" -- read the actual value out of
+# .env rather than hardcoding 8080, so the summary doesn't print a URL that
+# refuses connections when the host has overridden the port.
+$portLine = Get-Content .env | Where-Object { $_ -match '^APP_PORT=' } | Select-Object -Last 1
+$port = if ($portLine) { ($portLine -replace '^APP_PORT=', '').Trim() } else { '' }
+if ([string]::IsNullOrWhiteSpace($port)) { $port = '8080' }
 
 Write-Host ''
 Write-Host 'Setup complete.'
 Write-Host ''
-Write-Host '  Application   http://localhost:8080/products'
-Write-Host '  API health    http://localhost:8080/api/health'
+Write-Host "  Application   http://localhost:$port/products"
+Write-Host "  API health    http://localhost:$port/api/health"
 Write-Host ''
 Write-Host '  Run tests     .\scripts\test.ps1'
 Write-Host '  Stop          docker compose down'

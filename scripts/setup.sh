@@ -62,6 +62,11 @@ if ! grep -qE '^APP_KEY=base64:' .env; then
   fi
   sed -i.bak "s|^APP_KEY=.*|APP_KEY=${key}|" .env
   rm -f .env.bak
+  # sed silently no-ops (exit 0) if .env has no APP_KEY= line to match at all --
+  # e.g. a hand-edited or truncated .env. Don't sail into migrate/seed and a
+  # "Setup complete" banner while the app is actually running on the
+  # entrypoint's ephemeral, restart-losing key.
+  grep -qE '^APP_KEY=base64:' .env || { echo "ERROR: failed to write APP_KEY into .env" >&2; exit 1; }
 fi
 
 # Deliberately NOT `migrate --force --seed`: the entrypoint invoked above
@@ -80,15 +85,21 @@ docker compose run --rm nuxt npm ci
 echo "==> Starting the full stack"
 docker compose up -d
 
-cat <<'DONE'
+# docker-compose.yml maps "${APP_PORT:-8080}:80" -- read the actual value out of
+# .env rather than hardcoding 8080, so the summary doesn't print a URL that
+# refuses connections when the host has overridden the port.
+port="$(grep -E '^APP_PORT=' .env | tail -n 1 | cut -d= -f2-)"
+port="${port:-8080}"
+
+cat <<EOF
 
 Setup complete.
 
-  Application   http://localhost:8080/products
-  API health    http://localhost:8080/api/health
+  Application   http://localhost:${port}/products
+  API health    http://localhost:${port}/api/health
 
   Run tests     ./scripts/test.sh
   Stop          docker compose down
   Logs          docker compose logs -f
 
-DONE
+EOF
