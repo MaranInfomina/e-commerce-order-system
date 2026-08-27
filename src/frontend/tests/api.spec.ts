@@ -100,8 +100,12 @@ describe('formatCents', () => {
     expect(formatCents(50)).toBe('0.50')
   })
 
-  it('formats an exact hundred with no rounding drift', () => {
+  it('formats a value one cent under a whole unit', () => {
     expect(formatCents(1999)).toBe('19.99')
+  })
+
+  it('formats an exact multiple of a whole unit with no fractional remainder', () => {
+    expect(formatCents(500)).toBe('5.00')
   })
 
   it('formats a negative value with a sign prefix', () => {

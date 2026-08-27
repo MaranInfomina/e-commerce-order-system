@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\User;
-
 return [
 
     /*
@@ -64,7 +62,11 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', User::class),
+            // App\Models\User was removed at Task 7 — Milestone 1 has no
+            // authentication yet, so this stays a plain class-name string
+            // rather than a ::class reference to a class that no longer
+            // exists.
+            'model' => env('AUTH_MODEL', 'App\\Models\\User'),
         ],
 
         // 'users' => [

@@ -26,6 +26,14 @@ class ApiExceptionRenderer
             // NotFoundHttpException before render callbacks run, so the
             // previous exception is what tells a missing record from a
             // missing route. This branch must precede the plain 404 branch.
+            //
+            // Because NOT_FOUND vs ROUTE_NOT_FOUND is derived from that
+            // previous exception, controllers must locate records via
+            // implicit route-model binding (a typed `Product $product`
+            // parameter) rather than `abort(404)` — an explicit abort()
+            // never carries a ModelNotFoundException, so it would always
+            // fall through to ROUTE_NOT_FOUND regardless of what was
+            // actually missing.
             $e instanceof NotFoundHttpException
                 && $e->getPrevious() instanceof ModelNotFoundException => self::envelope(
                     'NOT_FOUND',
