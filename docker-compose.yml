@@ -1,0 +1,73 @@
+services:
+  nginx:
+    build: ./infra/nginx
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./src/backend:/var/www/html
+    depends_on:
+      - php-fpm
+      - nuxt
+
+  php-fpm:
+    build: ./src/backend
+    environment:
+      APP_NAME: ${APP_NAME:-COE Order System}
+      APP_ENV: ${APP_ENV:-local}
+      APP_KEY: ${APP_KEY:-}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      CACHE_STORE: ${CACHE_STORE:-file}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-coe_orders}
+      DB_USERNAME: ${DB_USERNAME:-coe}
+      DB_PASSWORD: ${DB_PASSWORD:-local_dev_only}
+      DB_TEST_DATABASE: ${POSTGRES_TEST_DB:-coe_orders_test}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      AUTO_SEED: ${AUTO_SEED:-true}
+    volumes:
+      - ./src/backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+      - backend_storage_framework:/var/www/html/storage/framework
+      - backend_bootstrap_cache:/var/www/html/bootstrap/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-coe_orders}
+      POSTGRES_USER: ${POSTGRES_USER:-coe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_only}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-coe_orders_test}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coe} -d ${POSTGRES_DB:-coe_orders}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  nuxt:
+    build:
+      context: ./src/frontend
+      target: prod
+    environment:
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_BASE_SERVER: http://nginx/api/v1
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: "3000"
+
+volumes:
+  pgdata:
+  backend_vendor:
+  backend_storage_framework:
+  backend_bootstrap_cache:
