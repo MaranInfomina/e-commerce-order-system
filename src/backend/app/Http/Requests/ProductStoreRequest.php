@@ -17,8 +17,8 @@ class ProductStoreRequest extends FormRequest
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:products,slug'],
             'sku' => ['required', 'string', 'max:64', 'unique:products,sku'],
             'description' => ['nullable', 'string', 'max:5000'],
-            'price_cents' => ['required', 'integer', 'min:0'],
-            'stock_quantity' => ['required', 'integer', 'min:0'],
+            'price_cents' => ['required', 'integer', 'min:0', 'max:2147483647'],
+            'stock_quantity' => ['required', 'integer', 'min:0', 'max:2147483647'],
             'is_active' => ['boolean'],
         ];
     }

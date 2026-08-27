@@ -7,7 +7,7 @@ use function Pest\Laravel\deleteJson;
 use function Pest\Laravel\patchJson;
 use function Pest\Laravel\postJson;
 
-function validProductPayload(int $categoryId): array
+function productWriteTestPayload(int $categoryId): array
 {
     return [
         'category_id' => $categoryId,
@@ -24,7 +24,7 @@ function validProductPayload(int $categoryId): array
 it('creates a product and stores the price as an integer', function () {
     $category = Category::factory()->create();
 
-    postJson('/api/v1/products', validProductPayload($category->id))
+    postJson('/api/v1/products', productWriteTestPayload($category->id))
         ->assertCreated()
         ->assertJsonPath('data.name', 'Titanium Kettle')
         ->assertJsonPath('data.price_cents', 12999);
@@ -39,7 +39,7 @@ it('rejects an invalid payload with per-field details', function () {
     $category = Category::factory()->create();
 
     $response = postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'name' => '',
         'price_cents' => '12.99',
         'category_id' => 999999,
@@ -56,8 +56,35 @@ it('rejects a negative stock quantity', function () {
     $category = Category::factory()->create();
 
     postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'stock_quantity' => -1,
+    ])
+        ->assertStatus(422)
+        ->assertJsonStructure(['error' => ['details' => ['stock_quantity']]]);
+});
+
+it('rejects a price_cents value that overflows the database column', function () {
+    // The products.price_cents column is a 4-byte Postgres integer
+    // (max 2147483647). Without an upper bound, filter_var-based integer
+    // validation happily accepts a PHP int this large and the value only
+    // fails once it reaches the database, surfacing as a raw 500 instead
+    // of a clean 422.
+    $category = Category::factory()->create();
+
+    postJson('/api/v1/products', [
+        ...productWriteTestPayload($category->id),
+        'price_cents' => 2147483648,
+    ])
+        ->assertStatus(422)
+        ->assertJsonStructure(['error' => ['details' => ['price_cents']]]);
+});
+
+it('rejects a stock_quantity value that overflows the database column', function () {
+    $category = Category::factory()->create();
+
+    postJson('/api/v1/products', [
+        ...productWriteTestPayload($category->id),
+        'stock_quantity' => 2147483648,
     ])
         ->assertStatus(422)
         ->assertJsonStructure(['error' => ['details' => ['stock_quantity']]]);
@@ -68,12 +95,12 @@ it('rejects a duplicate slug or sku', function () {
     Product::factory()->for($category)->create(['slug' => 'taken', 'sku' => 'TAKEN-1']);
 
     postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'slug' => 'taken',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['slug']]]);
 
     postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'sku' => 'TAKEN-1',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['sku']]]);
 });
@@ -84,12 +111,12 @@ it('rejects a slug or sku reused from a soft-deleted product with a clean 422', 
     $trashed->delete();
 
     postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'slug' => 'gone',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['slug']]]);
 
     postJson('/api/v1/products', [
-        ...validProductPayload($category->id),
+        ...productWriteTestPayload($category->id),
         'sku' => 'GONE-1',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['sku']]]);
 });
@@ -117,6 +144,33 @@ it('lets a product keep its own slug when updating', function () {
     ])->assertOk()->assertJsonPath('data.name', 'Renamed');
 });
 
+it('rejects a slug already used by a different product when updating', function () {
+    $category = Category::factory()->create();
+    Product::factory()->for($category)->create(['slug' => 'someone-elses-slug']);
+    $product = Product::factory()->for($category)->create(['slug' => 'mine']);
+
+    patchJson("/api/v1/products/{$product->id}", [
+        'slug' => 'someone-elses-slug',
+    ])
+        ->assertStatus(422)
+        ->assertJsonStructure(['error' => ['details' => ['slug']]]);
+
+    expect($product->fresh()->slug)->toBe('mine');
+});
+
+it('rejects a price_cents value that overflows the database column on update', function () {
+    // Proves ProductUpdateRequest carries the same upper bound as
+    // ProductStoreRequest; the two classes construct their rule arrays
+    // independently so a fix to one does not guarantee the other.
+    $product = Product::factory()->create();
+
+    patchJson("/api/v1/products/{$product->id}", [
+        'price_cents' => 2147483648,
+    ])
+        ->assertStatus(422)
+        ->assertJsonStructure(['error' => ['details' => ['price_cents']]]);
+});
+
 it('soft deletes a product and returns no content', function () {
     $product = Product::factory()->create();
 
@@ -124,4 +178,16 @@ it('soft deletes a product and returns no content', function () {
 
     expect(Product::find($product->id))->toBeNull();
     expect(Product::withTrashed()->find($product->id))->not->toBeNull();
+});
+
+it('returns a not-found envelope when updating a product that does not exist', function () {
+    patchJson('/api/v1/products/999999', ['name' => 'Ghost'])
+        ->assertStatus(404)
+        ->assertJsonPath('error.code', 'NOT_FOUND');
+});
+
+it('returns a not-found envelope when deleting a product that does not exist', function () {
+    deleteJson('/api/v1/products/999999')
+        ->assertStatus(404)
+        ->assertJsonPath('error.code', 'NOT_FOUND');
 });
