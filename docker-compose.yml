@@ -28,6 +28,8 @@ services:
       DB_USERNAME: ${DB_USERNAME:-coe}
       DB_PASSWORD: ${DB_PASSWORD:-local_dev_only}
       DB_TEST_DATABASE: ${POSTGRES_TEST_DB:-coe_orders_test}
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+      AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
       - ./src/backend:/var/www/html
       - backend_vendor:/var/www/html/vendor

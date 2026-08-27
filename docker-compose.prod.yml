@@ -7,3 +7,8 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
+      # Never auto-run migrations or seed demo data against a production
+      # database on container start (I2). Run these deliberately instead:
+      #   docker compose exec php-fpm php artisan migrate --force
+      AUTO_MIGRATE: "false"
+      AUTO_SEED: "false"
