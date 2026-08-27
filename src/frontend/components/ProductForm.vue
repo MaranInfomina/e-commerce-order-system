@@ -28,8 +28,8 @@ function submit() {
     slug: form.slug,
     sku: form.sku,
     description: form.description,
-    price_cents: Number(form.price_cents),
-    stock_quantity: Number(form.stock_quantity),
+    price_cents: form.price_cents === '' ? null : Number(form.price_cents),
+    stock_quantity: form.stock_quantity === '' ? null : Number(form.stock_quantity),
     is_active: form.is_active,
   })
 }
@@ -99,7 +99,7 @@ function submit() {
     </label>
 
     <label class="inline">
-      <input v-model="form.is_active" type="checkbox">
+      <input v-model="form.is_active" data-test="field-active" type="checkbox">
       Active
     </label>
 

@@ -51,8 +51,8 @@ export interface ProductInput {
   slug: string
   sku: string
   description: string
-  price_cents: number
-  stock_quantity: number
+  price_cents: number | null
+  stock_quantity: number | null
   is_active: boolean
 }
 

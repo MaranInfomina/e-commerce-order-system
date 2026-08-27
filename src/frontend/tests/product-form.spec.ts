@@ -56,6 +56,7 @@ describe('ProductForm', () => {
     await wrapper.get('[data-test="field-name"]').setValue('Titanium Kettle')
     await wrapper.get('[data-test="field-slug"]').setValue('titanium-kettle')
     await wrapper.get('[data-test="field-sku"]').setValue('KET-0001')
+    await wrapper.get('[data-test="field-description"]').setValue('A very shiny kettle.')
     await wrapper.get('[data-test="field-price"]').setValue('12999')
     await wrapper.get('[data-test="field-stock"]').setValue('10')
     await wrapper.get('[data-test="field-category"]').setValue('1')
@@ -68,10 +69,58 @@ describe('ProductForm', () => {
       name: 'Titanium Kettle',
       slug: 'titanium-kettle',
       sku: 'KET-0001',
+      description: 'A very shiny kettle.',
       price_cents: 12999,
       stock_quantity: 10,
+      is_active: true,
     })
     expect(typeof (submitted as { price_cents: number }).price_cents).toBe('number')
+  })
+
+  it('unchecks is_active and emits it as false', async () => {
+    const wrapper = mount(ProductForm, {
+      props: { categories, errors: {}, submitting: false },
+    })
+
+    await wrapper.get('[data-test="field-active"]').setValue(false)
+    await wrapper.get('form').trigger('submit')
+
+    const submitted = wrapper.emitted('submit')?.[0]?.[0]
+
+    expect(submitted).toMatchObject({ is_active: false })
+  })
+
+  it('emits null price_cents and stock_quantity when those fields are left blank, not zero', async () => {
+    const wrapper = mount(ProductForm, {
+      props: { categories, errors: {}, submitting: false },
+    })
+
+    await wrapper.get('[data-test="field-name"]').setValue('Titanium Kettle')
+    await wrapper.get('[data-test="field-slug"]').setValue('titanium-kettle')
+    await wrapper.get('[data-test="field-sku"]').setValue('KET-0001')
+    await wrapper.get('[data-test="field-category"]').setValue('1')
+    // Price and stock are deliberately left blank.
+    await wrapper.get('form').trigger('submit')
+
+    const submitted = wrapper.emitted('submit')?.[0]?.[0] as { price_cents: unknown, stock_quantity: unknown }
+
+    expect(submitted.price_cents).toBeNull()
+    expect(submitted.stock_quantity).toBeNull()
+  })
+
+  it('still emits the correct integer when price and stock are filled in', async () => {
+    const wrapper = mount(ProductForm, {
+      props: { categories, errors: {}, submitting: false },
+    })
+
+    await wrapper.get('[data-test="field-price"]').setValue('12999')
+    await wrapper.get('[data-test="field-stock"]').setValue('10')
+    await wrapper.get('form').trigger('submit')
+
+    const submitted = wrapper.emitted('submit')?.[0]?.[0] as { price_cents: unknown, stock_quantity: unknown }
+
+    expect(submitted.price_cents).toBe(12999)
+    expect(submitted.stock_quantity).toBe(10)
   })
 
   it('disables the submit button while submitting', () => {
