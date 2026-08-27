@@ -11,13 +11,15 @@ cd /app
 # first in this || chain: busybox `[ a -nt b ]` is false when b does not
 # exist, so on a truly empty volume the -nt clause alone would never fire.
 if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then
-  echo "[entrypoint] node_modules is missing or stale relative to package-lock.json, installing"
+  echo "[entrypoint] node_modules is missing or stale relative to package-lock.json, installing" >&2
+  # >&2: same reasoning as the echo above — npm's own console output goes to
+  # stdout by default and must not leak into a caller's command substitution.
   if [ -f package-lock.json ]; then
-    npm ci
+    npm ci >&2
   else
-    npm install
+    npm install >&2
   fi
 fi
 
-echo "[entrypoint] starting: $*"
+echo "[entrypoint] starting: $*" >&2
 exec "$@"
