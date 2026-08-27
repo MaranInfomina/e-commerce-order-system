@@ -1,11 +1,8 @@
 <?php
 
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-
-uses(RefreshDatabase::class);
 
 it('creates the categories and products tables', function () {
     expect(Schema::hasTable('categories'))->toBeTrue();

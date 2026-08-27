@@ -2,9 +2,6 @@
 
 use App\Models\Category;
 use App\Models\Product;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-
-uses(RefreshDatabase::class);
 
 it('relates a product to its category in both directions', function () {
     $category = Category::factory()->create();
