@@ -85,6 +85,17 @@ envelope. `details` is only present on validation failures (422):
 { "error": { "code": "VALIDATION_FAILED", "message": "…", "details": { "field": ["…"] } } }
 ```
 
+`code` is one of:
+
+| Code | Status | When |
+|---|---|---|
+| `VALIDATION_FAILED` | 422 | Request data failed validation |
+| `NOT_FOUND` | 404 | Route-model binding found no matching record |
+| `ROUTE_NOT_FOUND` | 404 | No route matches the URL |
+| `METHOD_NOT_ALLOWED` | 405 | The route exists but not for this HTTP method |
+| `HTTP_ERROR` | varies | Any other HTTP exception (its own status code, generic message) |
+| `INTERNAL_ERROR` | 500 | Anything else — the message never discloses internal detail |
+
 Prices are integer **cents** in `price_cents`, everywhere. No floats touch money.
 
 Two behaviours in the list endpoint look like bugs and are not:
@@ -146,6 +157,17 @@ file, not the effective variable, so the banner can print the wrong URL in
 that case even though the container is actually listening on the right
 port.
 
+`AUTO_MIGRATE` and `AUTO_SEED` (both default `true`) control what the
+`php-fpm` entrypoint does on container start: run `php artisan migrate
+--force`, and run the guarded `php artisan app:seed-if-empty`. Set either to
+`false` in `.env` to skip it. `docker-compose.prod.yml` already sets both to
+`false`, so the production overlay never migrates or seeds automatically —
+run those commands by hand instead:
+
+```bash
+docker compose exec php-fpm php artisan migrate --force
+```
+
 ## Known limitations and gotchas
 
 - **A cold `docker compose up` prints five `#app-manifest` pre-transform
@@ -183,10 +205,19 @@ port.
 - **Production is not a finished deployment.** The production overlay
   inherits the `./src/backend` source bind mount from the base compose
   file, and `src/backend/Dockerfile` does not bake application code into
-  the image. This was confirmed empirically in Task 16: remove the mount
-  and `/var/www/html` is empty, and every route returns "File not found."
-  The overlay proves the Nitro production build works; it is a known
-  limitation of this milestone, not production-ready packaging.
+  the image: remove the mount and `/var/www/html` is empty, and every
+  route returns "File not found." The overlay proves the Nitro production
+  build works; it is a known limitation of this milestone, not
+  production-ready packaging.
+
+- **The production image carries dev dependencies.** `docker-entrypoint.sh`
+  runs `composer install` without `--no-dev`, so Pest, PHPUnit, Faker, and
+  Pint ship in the production container too. This is intentional for this
+  milestone, not an oversight: `DatabaseSeeder` depends on `fakerphp/faker`,
+  which is a `require-dev` package, and `AUTO_SEED` needs to work even
+  against the production overlay if enabled by hand. A real production
+  packaging pass would split seeding out of the deployed image and add
+  `--no-dev` to the install.
 
 - **`LOG_CHANNEL` must stay `stderr`.** Only `storage/framework` and
   `bootstrap/cache` are on named volumes writable by `www-data`;

@@ -41,10 +41,12 @@ writable.
 
 ## Testing
 
-Pest, running against the separate `coe_orders_test` database created by
-`infra/postgres/init/01-create-test-db.sh`. Tests use real PostgreSQL rather
-than SQLite so that check constraints and `ILIKE` behave exactly as in
-production.
+Pest, running against a separate database created by
+`infra/postgres/init/01-create-test-db.sh`, whose name is resolved from the
+`DB_TEST_DATABASE` environment variable at test bootstrap time (see
+`tests/bootstrap.php`) — `coe_orders_test` is only the default, not a fixed
+name. Tests use real PostgreSQL rather than SQLite so that check constraints
+and `ILIKE` behave exactly as in production.
 
 ```bash
 docker compose exec php-fpm ./vendor/bin/pest
