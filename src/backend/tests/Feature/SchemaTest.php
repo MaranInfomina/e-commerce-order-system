@@ -19,10 +19,11 @@ it('creates the categories and products tables', function () {
     expect($priceColumn['type'])->toBe('integer');
 });
 
-it('has exactly the tables Milestone 1 allows and no more', function () {
-    // DEC-5: only categories and products this milestone. Query the catalog
+it('has exactly the tables Milestone 2 allows and no more', function () {
+    // DEC-5 as amended by Milestone 2's CR-5: categories, products, and now
+    // users. No Sanctum, so no personal_access_tokens. Query the catalog
     // directly rather than listing expectations that would pass vacuously —
-    // this is what makes DEC-5 an enforced invariant instead of prose.
+    // this is what makes the constraint an enforced invariant, not prose.
     $tables = DB::table('information_schema.tables')
         ->where('table_schema', 'public')
         ->where('table_type', 'BASE TABLE')
@@ -30,7 +31,7 @@ it('has exactly the tables Milestone 1 allows and no more', function () {
         ->pluck('table_name')
         ->all();
 
-    expect($tables)->toBe(['categories', 'migrations', 'products']);
+    expect($tables)->toBe(['categories', 'migrations', 'products', 'users']);
 });
 
 it('rejects negative stock at the database level', function () {
