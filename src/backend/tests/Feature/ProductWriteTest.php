@@ -7,24 +7,26 @@ use function Pest\Laravel\deleteJson;
 use function Pest\Laravel\patchJson;
 use function Pest\Laravel\postJson;
 
-function productWriteTestPayload(int $categoryId): array
-{
-    return [
-        'category_id' => $categoryId,
-        'name' => 'Titanium Kettle',
-        'slug' => 'titanium-kettle',
-        'sku' => 'KET-0001',
-        'description' => 'Boils water quickly.',
-        'price_cents' => 12999,
-        'stock_quantity' => 10,
-        'is_active' => true,
-    ];
-}
+// A closure, not a top-level function: Pest loads every test file into a
+// single process, so a bare `function productWriteTestPayload()` here would
+// be a global symbol that any later test file redeclaring the same name
+// would fatal on. Scoping it to this file's local variable makes that
+// collision structurally impossible rather than merely unlikely.
+$productPayload = fn (int $categoryId): array => [
+    'category_id' => $categoryId,
+    'name' => 'Titanium Kettle',
+    'slug' => 'titanium-kettle',
+    'sku' => 'KET-0001',
+    'description' => 'Boils water quickly.',
+    'price_cents' => 12999,
+    'stock_quantity' => 10,
+    'is_active' => true,
+];
 
-it('creates a product and stores the price as an integer', function () {
+it('creates a product and stores the price as an integer', function () use ($productPayload) {
     $category = Category::factory()->create();
 
-    postJson('/api/v1/products', productWriteTestPayload($category->id))
+    postJson('/api/v1/products', $productPayload($category->id))
         ->assertCreated()
         ->assertJsonPath('data.name', 'Titanium Kettle')
         ->assertJsonPath('data.price_cents', 12999);
@@ -35,11 +37,11 @@ it('creates a product and stores the price as an integer', function () {
     expect($stored->price_cents)->toBeInt()->toBe(12999);
 });
 
-it('rejects an invalid payload with per-field details', function () {
+it('rejects an invalid payload with per-field details', function () use ($productPayload) {
     $category = Category::factory()->create();
 
     $response = postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'name' => '',
         'price_cents' => '12.99',
         'category_id' => 999999,
@@ -52,18 +54,18 @@ it('rejects an invalid payload with per-field details', function () {
         ]);
 });
 
-it('rejects a negative stock quantity', function () {
+it('rejects a negative stock quantity', function () use ($productPayload) {
     $category = Category::factory()->create();
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'stock_quantity' => -1,
     ])
         ->assertStatus(422)
         ->assertJsonStructure(['error' => ['details' => ['stock_quantity']]]);
 });
 
-it('rejects a price_cents value that overflows the database column', function () {
+it('rejects a price_cents value that overflows the database column', function () use ($productPayload) {
     // The products.price_cents column is a 4-byte Postgres integer
     // (max 2147483647). Without an upper bound, filter_var-based integer
     // validation happily accepts a PHP int this large and the value only
@@ -72,51 +74,65 @@ it('rejects a price_cents value that overflows the database column', function ()
     $category = Category::factory()->create();
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'price_cents' => 2147483648,
     ])
         ->assertStatus(422)
         ->assertJsonStructure(['error' => ['details' => ['price_cents']]]);
 });
 
-it('rejects a stock_quantity value that overflows the database column', function () {
+it('accepts a price_cents value at the exact database column boundary', function () use ($productPayload) {
+    // Proves max:2147483647 is the bound in force, not a stricter one:
+    // the previous test only shows 2147483648 is rejected, which alone
+    // cannot distinguish this rule from an accidentally tighter max.
     $category = Category::factory()->create();
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
+        'price_cents' => 2147483647,
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.price_cents', 2147483647);
+});
+
+it('rejects a stock_quantity value that overflows the database column', function () use ($productPayload) {
+    $category = Category::factory()->create();
+
+    postJson('/api/v1/products', [
+        ...$productPayload($category->id),
         'stock_quantity' => 2147483648,
     ])
         ->assertStatus(422)
         ->assertJsonStructure(['error' => ['details' => ['stock_quantity']]]);
 });
 
-it('rejects a duplicate slug or sku', function () {
+it('rejects a duplicate slug or sku', function () use ($productPayload) {
     $category = Category::factory()->create();
     Product::factory()->for($category)->create(['slug' => 'taken', 'sku' => 'TAKEN-1']);
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'slug' => 'taken',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['slug']]]);
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'sku' => 'TAKEN-1',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['sku']]]);
 });
 
-it('rejects a slug or sku reused from a soft-deleted product with a clean 422', function () {
+it('rejects a slug or sku reused from a soft-deleted product with a clean 422', function () use ($productPayload) {
     $category = Category::factory()->create();
     $trashed = Product::factory()->for($category)->create(['slug' => 'gone', 'sku' => 'GONE-1']);
     $trashed->delete();
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'slug' => 'gone',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['slug']]]);
 
     postJson('/api/v1/products', [
-        ...productWriteTestPayload($category->id),
+        ...$productPayload($category->id),
         'sku' => 'GONE-1',
     ])->assertStatus(422)->assertJsonStructure(['error' => ['details' => ['sku']]]);
 });
