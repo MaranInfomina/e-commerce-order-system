@@ -18,8 +18,8 @@ services:
       APP_DEBUG: ${APP_DEBUG:-true}
       APP_URL: ${APP_URL:-http://localhost:8080}
       LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
-      CACHE_STORE: ${CACHE_STORE:-file}
-      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      SESSION_DRIVER: ${SESSION_DRIVER:-redis}
       QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
       DB_CONNECTION: ${DB_CONNECTION:-pgsql}
       DB_HOST: ${DB_HOST:-postgres}
@@ -28,6 +28,11 @@ services:
       DB_USERNAME: ${DB_USERNAME:-coe}
       DB_PASSWORD: ${DB_PASSWORD:-local_dev_only}
       DB_TEST_DATABASE: ${POSTGRES_TEST_DB:-coe_orders_test}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_CACHE_DB: ${REDIS_CACHE_DB:-0}
+      REDIS_DB: ${REDIS_DB:-1}
+      CACHE_PREFIX: ${CACHE_PREFIX:-}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
@@ -37,6 +42,8 @@ services:
       - backend_bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   postgres:
@@ -56,6 +63,20 @@ services:
       retries: 12
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    # appendonly makes the cart survive a container restart, which is the
+    # stronger and more demonstrable form of FR-20's "persists".
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   nuxt:
     build:
       context: ./src/frontend
@@ -68,6 +89,7 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
   backend_vendor:
   backend_storage_framework:
   backend_bootstrap_cache:

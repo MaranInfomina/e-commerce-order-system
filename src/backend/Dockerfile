@@ -3,9 +3,16 @@ FROM php:8.4-fpm-alpine
 # pdo_pgsql needs the postgres client headers; intl needs icu.
 # -dev headers/static libs are build-only and purged after the extensions
 # are compiled; only the runtime shared libraries ship in the final image.
+#
+# phpredis is the client config/database.php names (REDIS_CLIENT=phpredis).
+# It is a PECL extension, not a bundled one, so it is compiled here; without
+# it every Redis connection dies with `Class "Redis" not found`.
 RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
  && apk add --no-cache postgresql-libs icu-libs git unzip \
  && docker-php-ext-install pdo_pgsql bcmath intl opcache \
+ && pecl install redis \
+ && docker-php-ext-enable redis \
+ && rm -rf /tmp/pear \
  && apk del .build-deps
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
