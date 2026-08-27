@@ -64,6 +64,7 @@
         <env name="REDIS_SESSION_DB" value="13" force="true"/>
         <env name="CACHE_PREFIX" value="" force="true"/>
         <env name="JWT_SECRET" value="testing-secret-not-used-outside-the-suite" force="true"/>
+        <env name="JWT_TTL" value="3600" force="true"/>
         <!-- These six need a <server> mirror, not just <env>: phpdotenv
              reads $_SERVER before $_ENV and getenv(), PHPUnit's <env>
              only calls putenv(), and Compose already places every
@@ -79,6 +80,7 @@
         <server name="REDIS_SESSION_DB" value="13" force="true"/>
         <server name="CACHE_PREFIX" value="" force="true"/>
         <server name="JWT_SECRET" value="testing-secret-not-used-outside-the-suite" force="true"/>
+        <server name="JWT_TTL" value="3600" force="true"/>
         <server name="APP_ENV" value="testing" force="true"/>
         <server name="DB_CONNECTION" value="pgsql" force="true"/>
         <!-- DB_DATABASE is intentionally not forced here either — see the
