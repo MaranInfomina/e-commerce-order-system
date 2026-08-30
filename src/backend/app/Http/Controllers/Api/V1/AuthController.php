@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Auth\JwtGuard;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
+use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\TokenDenylist;
 use App\Services\TokenService;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -92,6 +96,38 @@ class AuthController extends Controller
             'token_type' => 'Bearer',
             'expires_in' => $issued['expires_in'],
         ]);
+    }
+
+    /**
+     * TokenDenylist is injected per-method for the same reason TokenService
+     * is on login(): the plan asked for a constructor holding both, but this
+     * controller's constructor was deliberately removed in Task 4 so that
+     * register() cannot be brought down by a dependency it never uses.
+     */
+    public function logout(TokenDenylist $denylist): JsonResponse
+    {
+        /** @var JwtGuard $guard */
+        $guard = auth('api');
+        $claims = $guard->claims();
+
+        if (is_array($claims) && isset($claims['jti'], $claims['exp'])) {
+            $denylist->revoke((string) $claims['jti'], (int) $claims['exp']);
+        }
+
+        return response()->json(null, 204);
+    }
+
+    public function me(Request $request): JsonResponse
+    {
+        return UserResource::make($request->user())->response();
+    }
+
+    public function updateMe(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $user->update($request->validated());
+
+        return UserResource::make($user->fresh())->response();
     }
 
     /**

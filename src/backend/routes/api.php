@@ -25,6 +25,16 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [AuthController::class, 'login'])
         ->middleware('throttle:login');
 
+    // Everything below needs a verified, non-revoked bearer token. The
+    // `auth:api` middleware runs the JwtGuard; a null user becomes an
+    // AuthenticationException, which ApiExceptionRenderer turns into the
+    // UNAUTHENTICATED envelope.
+    Route::middleware('auth:api')->group(function () {
+        Route::post('/auth/logout', [AuthController::class, 'logout']);
+        Route::get('/auth/me', [AuthController::class, 'me']);
+        Route::patch('/auth/me', [AuthController::class, 'updateMe']);
+    });
+
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/{product}', [ProductController::class, 'show']);
