@@ -16,6 +16,32 @@ class ApiExceptionRenderer
 {
     public static function render(Throwable $e): JsonResponse
     {
+        $response = self::body($e);
+
+        // Status metadata, not internals. envelope() builds a fresh
+        // JsonResponse, which silently discarded every header the exception
+        // carried: a 429 lost Retry-After and the three X-RateLimit-* headers
+        // (leaving a client no way to know when to try again — Task 10's login
+        // page reads Retry-After), and a 405 lost the Allow header the HTTP
+        // spec requires on that status. The message and the trace stay
+        // suppressed; only the headers come back.
+        if ($e instanceof HttpExceptionInterface) {
+            foreach ($e->getHeaders() as $name => $value) {
+                // Never let an exception redefine the media type of an
+                // envelope this class just serialised as JSON.
+                if (strcasecmp($name, 'Content-Type') === 0) {
+                    continue;
+                }
+
+                $response->headers->set($name, $value);
+            }
+        }
+
+        return $response;
+    }
+
+    private static function body(Throwable $e): JsonResponse
+    {
         return match (true) {
             $e instanceof ValidationException => self::envelope(
                 'VALIDATION_FAILED',

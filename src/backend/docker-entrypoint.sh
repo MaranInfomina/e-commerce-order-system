@@ -30,6 +30,20 @@ if [ -z "${APP_KEY}" ]; then
   echo "[entrypoint] Run ./setup.sh to write a stable key into .env." >&2
 fi
 
+# Same shape as APP_KEY above, and for the same reason: docker-compose.yml
+# injects JWT_SECRET as an empty string on a clean clone, TokenService refuses
+# to construct without one, and login would 500 on `docker compose up`. 32
+# random bytes rendered as 64 hex characters clears TokenService's 32-byte
+# minimum with room to spare. Ephemeral by design — a restart invalidates every
+# issued token, which is why setup writes a stable one.
+if [ -z "${JWT_SECRET}" ]; then
+  JWT_SECRET="$(php -r 'echo bin2hex(random_bytes(32));')"
+  export JWT_SECRET
+  echo "[entrypoint] WARNING: no JWT_SECRET set; generated an ephemeral one." >&2
+  echo "[entrypoint] Every restart invalidates all issued tokens." >&2
+  echo "[entrypoint] Run ./setup.sh to write a stable secret into .env." >&2
+fi
+
 echo "[entrypoint] waiting for database ${DB_HOST}:${DB_PORT}" >&2
 attempts=0
 until php -r 'new PDO("pgsql:host=".getenv("DB_HOST").";port=".getenv("DB_PORT").";dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD"));' 2>/dev/null; do

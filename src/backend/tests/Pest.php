@@ -1,6 +1,8 @@
 <?php
 
+use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 
@@ -53,3 +55,73 @@ pest()->beforeEach(function () {
     Redis::connection('cache')->flushdb();
     Redis::connection('session')->flushdb();
 })->in('Feature', 'Unit');
+
+/**
+ * Swap the Hash facade for a recorder that delegates every call to the real
+ * hasher and remembers which digests check() was asked to compare against.
+ *
+ * The property under test — that a failed login costs the same whether the
+ * email exists or not — is a timing property, and phpunit.xml forces
+ * BCRYPT_ROUNDS=4 precisely so the suite does not spend 250ms per hash. At
+ * cost 4 the two paths differ by well under the noise floor, so a wall-clock
+ * assertion would either be flaky or so loose it could not fail. Asserting the
+ * *mechanism* instead is exact: if Hash::check() ran on both paths, the work
+ * was done on both paths. Reverting the controller to the short-circuiting
+ * `$user === null || ! Hash::check(...)` makes the unknown-email path record
+ * nothing, which is the regression this catches.
+ *
+ * Delegating rather than stubbing matters: the login must still really succeed
+ * or fail on the password, and Eloquent's `hashed` cast calls Hash::make()
+ * through this same facade.
+ *
+ * @return object{compared: list<string>}
+ */
+function recordHashChecks(): object
+{
+    $recorder = new class(Hash::getFacadeRoot()) implements Hasher
+    {
+        /** @var list<string> */
+        public array $compared = [];
+
+        public function __construct(private readonly Hasher $inner) {}
+
+        public function check(#[SensitiveParameter] $value, $hashedValue, array $options = []): bool
+        {
+            $this->compared[] = (string) $hashedValue;
+
+            return $this->inner->check($value, $hashedValue, $options);
+        }
+
+        /** @return array<string, mixed> */
+        public function info($hashedValue): array
+        {
+            return $this->inner->info($hashedValue);
+        }
+
+        public function make(#[SensitiveParameter] $value, array $options = []): string
+        {
+            return $this->inner->make($value, $options);
+        }
+
+        public function needsRehash($hashedValue, array $options = []): bool
+        {
+            return $this->inner->needsRehash($hashedValue, $options);
+        }
+
+        /**
+         * HashManager::isHashed() is not on the Hasher contract but Laravel's
+         * `hashed` cast calls it through the facade, so an unforwarded call
+         * here would break every model that stores a password.
+         *
+         * @param  array<int, mixed>  $arguments
+         */
+        public function __call(string $method, array $arguments): mixed
+        {
+            return $this->inner->{$method}(...$arguments);
+        }
+    };
+
+    Hash::swap($recorder);
+
+    return $recorder;
+}

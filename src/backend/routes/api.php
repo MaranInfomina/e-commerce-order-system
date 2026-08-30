@@ -15,10 +15,15 @@ Route::prefix('v1')->group(function () {
     // CPU-exhaustion DoS — one request costs the attacker nothing and costs
     // the server ~250ms of hashing. 5/minute per IP is generous for a human
     // and useless for a script.
-    Route::middleware('throttle:5,1')->group(function () {
-        Route::post('/auth/register', [AuthController::class, 'register']);
-        Route::post('/auth/login', [AuthController::class, 'login']);
-    });
+    //
+    // Named limiters, one each (defined in AppServiceProvider::boot), rather
+    // than a shared `throttle:5,1`: the inline form keys on domain + IP with
+    // no route path, so the two endpoints shared a single bucket and failed
+    // logins consumed a visitor's ability to register.
+    Route::post('/auth/register', [AuthController::class, 'register'])
+        ->middleware('throttle:register');
+    Route::post('/auth/login', [AuthController::class, 'login'])
+        ->middleware('throttle:login');
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/products', [ProductController::class, 'index']);
