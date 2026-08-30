@@ -2,6 +2,8 @@
 
 use App\Models\User;
 use Firebase\JWT\JWT;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 
 use function Pest\Laravel\getJson;
@@ -86,6 +88,48 @@ it('revokes only the token that logged out, not every token for that user', func
 
     withHeader('Authorization', 'Bearer '.$phone)->getJson('/api/v1/auth/me')->assertStatus(401);
     withHeader('Authorization', 'Bearer '.$laptop)->getJson('/api/v1/auth/me')->assertOk();
+});
+
+it('refuses to authenticate when the denylist cannot be read', function () use ($login) {
+    $user = User::factory()->create(['password' => 'correct-horse-battery']);
+    $token = $login($user);
+
+    // Both halves. While Redis answers, the token is accepted...
+    withHeader('Authorization', 'Bearer '.$token)
+        ->getJson('/api/v1/auth/me')->assertOk();
+
+    // ...and when Redis is unreachable it is not. A revocation control that
+    // answers "not revoked" during an outage silently re-validates every
+    // logged-out token for the length of that outage, so the lookup has to be
+    // allowed to throw. Nothing else in this suite can catch that regression:
+    // wrapping isRevoked() in `try { ... } catch { return false; }` leaves the
+    // other twelve green, because Redis is up for all of them.
+    //
+    // The real TokenDenylist and the real RedisManager are used — a stubbed
+    // denylist that throws would only prove the guard propagates, and would
+    // sail straight past a catch added inside the denylist itself.
+    //
+    // Three things memoise the live connection and all three have to go:
+    // RedisManager snapshots config/database.php at first resolution, the
+    // container holds it as a singleton, and AuthManager holds the guard
+    // that was built around it.
+    config([
+        'database.redis.test.host' => '127.0.0.1',
+        'database.redis.test.port' => 1,
+    ]);
+    app()->forgetInstance('redis');
+    Redis::clearResolvedInstance('redis');
+    Auth::forgetGuards();
+
+    withHeader('Authorization', 'Bearer '.$token)
+        ->getJson('/api/v1/auth/me')
+        ->assertStatus(500)
+        // Fails closed, and stays quiet doing it: no class name, no host,
+        // no port, no trace, whatever APP_DEBUG says.
+        ->assertExactJson(['error' => [
+            'code' => 'INTERNAL_ERROR',
+            'message' => 'An unexpected error occurred.',
+        ]]);
 });
 
 it('returns an identical body for every kind of token failure', function () {
