@@ -2,7 +2,9 @@
 
 namespace App\Exceptions;
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -20,6 +22,16 @@ class ApiExceptionRenderer
                 'The given data was invalid.',
                 422,
                 $e->errors(),
+            ),
+
+            // Every authentication failure returns the same body: missing,
+            // malformed, expired and revoked tokens are indistinguishable
+            // to a caller. Distinguishing them tells an attacker which
+            // tokens are still live.
+            $e instanceof AuthenticationException => self::envelope(
+                'UNAUTHENTICATED',
+                'Authentication is required to access this resource.',
+                401,
             ),
 
             // Route model binding: Laravel wraps ModelNotFoundException in a
@@ -51,6 +63,12 @@ class ApiExceptionRenderer
                 'METHOD_NOT_ALLOWED',
                 'The HTTP method is not supported for this endpoint.',
                 405,
+            ),
+
+            $e instanceof ThrottleRequestsException => self::envelope(
+                'TOO_MANY_REQUESTS',
+                'Too many attempts. Please wait a minute and try again.',
+                429,
             ),
 
             // Any other HTTP exception keeps its status but not its message,
