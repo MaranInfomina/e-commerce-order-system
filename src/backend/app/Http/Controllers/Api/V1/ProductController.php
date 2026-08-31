@@ -44,6 +44,8 @@ class ProductController extends Controller
 
     public function store(ProductStoreRequest $request): JsonResponse
     {
+        $this->authorize('create', Product::class);
+
         $product = Product::create($request->validated());
 
         return ProductResource::make($product->load('category'))
@@ -53,6 +55,8 @@ class ProductController extends Controller
 
     public function update(ProductUpdateRequest $request, Product $product): ProductResource
     {
+        $this->authorize('update', $product);
+
         $product->update($request->validated());
 
         return ProductResource::make($product->load('category'));
@@ -60,6 +64,8 @@ class ProductController extends Controller
 
     public function destroy(Product $product): JsonResponse
     {
+        $this->authorize('delete', $product);
+
         $product->delete();
 
         return response()->json(null, 204);

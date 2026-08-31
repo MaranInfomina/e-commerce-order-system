@@ -2,11 +2,13 @@
 
 namespace App\Exceptions;
 
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -58,6 +60,26 @@ class ApiExceptionRenderer
                 'UNAUTHENTICATED',
                 'Authentication is required to access this resource.',
                 401,
+            ),
+
+            // The caller is authenticated but lacks the role. Distinct from
+            // UNAUTHENTICATED: 401 means "who are you", 403 means "not you".
+            $e instanceof AuthorizationException => self::envelope(
+                'FORBIDDEN',
+                'You do not have permission to perform this action.',
+                403,
+            ),
+
+            // Laravel's prepareException() ALWAYS converts a statusless
+            // AuthorizationException into this Symfony class before render
+            // callbacks run, so this is the arm that actually fires over
+            // HTTP. The one above is defence for direct callers of
+            // ApiExceptionRenderer::render() and cannot be reached through
+            // the request pipeline — do not write a feature test for it.
+            $e instanceof AccessDeniedHttpException => self::envelope(
+                'FORBIDDEN',
+                'You do not have permission to perform this action.',
+                403,
             ),
 
             // Route model binding: Laravel wraps ModelNotFoundException in a

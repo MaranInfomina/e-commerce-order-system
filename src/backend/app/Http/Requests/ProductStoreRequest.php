@@ -2,10 +2,20 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ProductStoreRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        // Before validation, not after: without this a non-admin can read
+        // per-field unique/exists results off a 422 and enumerate the
+        // products table. Delegates to the policy rather than re-checking
+        // isAdmin(), so there is one source of truth for who may write.
+        return $this->user()?->can('create', Product::class) ?? false;
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */

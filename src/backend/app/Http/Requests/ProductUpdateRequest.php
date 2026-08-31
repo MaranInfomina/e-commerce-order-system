@@ -7,6 +7,11 @@ use Illuminate\Validation\Rule;
 
 class ProductUpdateRequest extends FormRequest
 {
+    public function authorize(): bool
+    {
+        return $this->user()?->can('update', $this->route('product')) ?? false;
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
