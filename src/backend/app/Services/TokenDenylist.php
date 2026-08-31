@@ -33,12 +33,25 @@ class TokenDenylist
         return (bool) $this->connection()->exists(self::PREFIX.$jti);
     }
 
+    /**
+     * Which Redis connection holds the denylist.
+     *
+     * Split out with an explicit argument so the production arm is assertable.
+     * The suite only ever takes the `test` arm, so left inline a change from
+     * `default` to `cache` would move every revoked token into the database a
+     * routine cache flush empties — and the whole suite would stay green.
+     */
+    public static function connectionName(bool $testing): string
+    {
+        // `default` is logical database 1 — carts and the denylist.
+        // Deliberately not `cache`, which is safe to flush.
+        return $testing ? 'test' : 'default';
+    }
+
     private function connection(): Connection
     {
-        // The `default` connection is logical database 1 — carts and the
-        // denylist. Deliberately not `cache`, which is safe to flush.
         return $this->redis->connection(
-            app()->runningUnitTests() ? 'test' : 'default'
+            self::connectionName(app()->runningUnitTests())
         );
     }
 }
