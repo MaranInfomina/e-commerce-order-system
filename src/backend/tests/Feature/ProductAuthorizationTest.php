@@ -64,6 +64,36 @@ it('rejects a customer token on every write', function () use ($tokenFor, $paylo
         ->assertStatus(403)->assertJsonPath('error.code', 'FORBIDDEN');
 });
 
+it('denies a customer before validation runs, so a rejected write leaks no field detail', function () use ($tokenFor) {
+    // The only test that can see the form-request authorize() methods. Every
+    // other case here sends a VALID body, so the controller's own authorize()
+    // produces the same 403 — meaning both ProductStoreRequest::authorize()
+    // and ProductUpdateRequest::authorize() could be deleted with the suite
+    // still green, reopening the enumeration oracle they exist to close.
+    //
+    // A FormRequest authorizes before it validates. A non-admin must get 403,
+    // never a 422 whose details confirm which slug or sku is already taken.
+    $customer = User::factory()->create(['password' => 'correct-horse-battery']);
+    $token = $tokenFor($customer);
+    $product = Product::factory()->create(['slug' => 'taken-slug']);
+
+    // No body at all: six required fields would fail if validation ran first.
+    withHeader('Authorization', "Bearer {$token}")
+        ->postJson('/api/v1/products', [])
+        ->assertStatus(403)->assertJsonPath('error.code', 'FORBIDDEN');
+
+    // The oracle itself: a body that would trip unique:products,slug.
+    withHeader('Authorization', "Bearer {$token}")
+        ->postJson('/api/v1/products', ['slug' => 'taken-slug'])
+        ->assertStatus(403)->assertJsonPath('error.code', 'FORBIDDEN');
+
+    // The same one layer up. ProductUpdateRequest::authorize() must deny
+    // before rules() evaluates Rule::unique()->ignore() for this product.
+    withHeader('Authorization', "Bearer {$token}")
+        ->patchJson("/api/v1/products/{$product->id}", ['price_cents' => 'not-an-integer'])
+        ->assertStatus(403)->assertJsonPath('error.code', 'FORBIDDEN');
+});
+
 it('accepts an admin token on every write', function () use ($tokenFor, $payload) {
     // The other side of the boundary. Without this, a policy that denied
     // everyone would satisfy the test above.
