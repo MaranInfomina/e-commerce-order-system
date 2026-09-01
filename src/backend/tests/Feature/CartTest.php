@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Requests\CartItemRequest;
 use App\Models\Product;
 use App\Models\User;
 use App\Repositories\CartRepository;
@@ -243,4 +244,78 @@ it('drops a line whose product has been soft-deleted since it was added', functi
 
     // And the stale field is gone from the hash, not merely hidden.
     expect(Redis::connection('test')->hgetall("cart:user:{$user->id}"))->toBe([]);
+});
+
+it('clamps the stored quantity rather than only the per-request delta', function () use ($customer, $tokenFor) {
+    // POST increments, so `max:1000` on the request bounds the DELTA and not
+    // the result: without a clamp in the controller, two requests at the
+    // ceiling leave the line at 2000 and the rule's stated invariant is false.
+    $product = Product::factory()->create(['price_cents' => 100]);
+    $token = $tokenFor($customer());
+    $max = CartItemRequest::MAX_QUANTITY;
+
+    withHeader('Authorization', "Bearer {$token}")
+        ->postJson('/api/v1/cart/items', ['product_id' => $product->id, 'quantity' => $max]);
+
+    withHeader('Authorization', "Bearer {$token}")
+        ->postJson('/api/v1/cart/items', ['product_id' => $product->id, 'quantity' => $max])
+        ->assertCreated()
+        ->assertJsonPath('data.items.0.quantity', $max)
+        ->assertJsonPath('data.item_count', $max);
+});
+
+it('refuses to add a product that is already soft-deleted', function () use ($customer, $tokenFor) {
+    // A bare `exists` rule matches soft-deleted rows, so this validated, was
+    // written to the hash, and was swept back out by resolve() inside the same
+    // request — a 201 whose body is an empty cart. A nonexistent id already
+    // 422s; a deleted one is the same class of mistake and must answer alike.
+    $product = Product::factory()->create();
+    $product->delete();
+
+    $user = $customer();
+
+    withHeader('Authorization', 'Bearer '.$tokenFor($user))
+        ->postJson('/api/v1/cart/items', ['product_id' => $product->id, 'quantity' => 1])
+        ->assertStatus(422)
+        ->assertJsonStructure(['error' => ['details' => ['product_id']]]);
+
+    expect(Redis::connection('test')->exists("cart:user:{$user->id}"))->toBe(0);
+});
+
+it('clears one cart without touching the rest of the carts database', function () use ($customer, $tokenFor) {
+    // The denylist shares logical database 1 with the carts and is documented
+    // as never flushed wholesale. A clear() written as a KEYS sweep or a
+    // FLUSHDB would satisfy every other test in this file — the only one that
+    // calls DELETE /cart uses a single user and asserts only that their own
+    // cart is empty — while silently un-revoking every logged-out token.
+    $alice = $customer();
+    $bob = $customer();
+    $product = Product::factory()->create();
+
+    $aliceToken = $tokenFor($alice);
+    $bobToken = $tokenFor($bob);
+
+    withHeader('Authorization', "Bearer {$aliceToken}")
+        ->postJson('/api/v1/cart/items', ['product_id' => $product->id, 'quantity' => 5]);
+
+    withHeader('Authorization', "Bearer {$bobToken}")
+        ->postJson('/api/v1/cart/items', ['product_id' => $product->id, 'quantity' => 1]);
+
+    // Revoke a third party's token so the denylist has a live entry in db 1.
+    $carol = $customer();
+    $carolToken = $tokenFor($carol);
+    withHeader('Authorization', "Bearer {$carolToken}")
+        ->postJson('/api/v1/auth/logout')->assertNoContent();
+
+    $denylistKeys = Redis::connection('test')->keys('denylist:*');
+    expect($denylistKeys)->not->toBeEmpty();
+
+    withHeader('Authorization', "Bearer {$bobToken}")
+        ->deleteJson('/api/v1/cart')->assertNoContent();
+
+    // Bob's cart is gone; Alice's is untouched; the denylist entry survives.
+    expect(Redis::connection('test')->exists("cart:user:{$bob->id}"))->toBe(0)
+        ->and(Redis::connection('test')->hgetall("cart:user:{$alice->id}"))
+        ->toBe([(string) $product->id => '5'])
+        ->and(Redis::connection('test')->keys('denylist:*'))->toBe($denylistKeys);
 });

@@ -22,14 +22,24 @@ class CartController extends Controller
     public function addItem(CartItemRequest $request): JsonResponse
     {
         $data = $request->validated();
+        $userId = $request->user()->id;
+        $productId = (int) $data['product_id'];
 
-        $this->carts->increment(
-            $request->user()->id,
-            (int) $data['product_id'],
+        $newQuantity = $this->carts->increment(
+            $userId,
+            $productId,
             (int) $data['quantity'],
         );
 
-        return CartResource::make($this->resolve($request->user()->id))
+        // HINCRBY bounds the delta, not the result: repeated adds of the
+        // maximum walk the field up without limit, so the request rule alone
+        // would let two POSTs of 1000 leave the line at 2000. Clamping here is
+        // also what gives increment()'s return value a purpose.
+        if ($newQuantity > CartItemRequest::MAX_QUANTITY) {
+            $this->carts->setQuantity($userId, $productId, CartItemRequest::MAX_QUANTITY);
+        }
+
+        return CartResource::make($this->resolve($userId))
             ->response()
             ->setStatusCode(201);
     }
