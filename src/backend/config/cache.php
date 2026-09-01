@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Category;
+use App\Models\Product;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 
 return [
@@ -131,6 +134,16 @@ return [
     |
     */
 
-    'serializable_classes' => false,
+    // An allow-list, not `true`: `true` re-opens the gadget-chain surface the
+    // Laravel default closes, and `false` silently yields
+    // __PHP_Incomplete_Class — which is not null, so Cache::has() passes and
+    // the miss branch never runs. Only the three classes this milestone
+    // actually stores are listed: Product (product:{id}), Category (its
+    // eager-loaded relation), and the Collection wrapping categories:all.
+    'serializable_classes' => [
+        Category::class,
+        Product::class,
+        Collection::class,
+    ],
 
 ];
