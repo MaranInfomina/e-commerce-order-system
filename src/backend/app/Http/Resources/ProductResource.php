@@ -18,6 +18,7 @@ class ProductResource extends JsonResource
             'slug' => $this->slug,
             'sku' => $this->sku,
             'description' => $this->description,
+            'image_url' => $this->image_url,
             // Integer cents, never a formatted or floating-point price.
             'price_cents' => $this->price_cents,
             'stock_quantity' => $this->stock_quantity,

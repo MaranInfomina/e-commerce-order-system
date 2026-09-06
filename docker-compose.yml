@@ -6,8 +6,18 @@ services:
     volumes:
       - ./src/backend:/var/www/html
     depends_on:
-      - php-fpm
-      - nuxt
+      php-fpm:
+        condition: service_started
+      nuxt:
+        condition: service_started
+      # Not just ordering: the /storage/ location below names `garage` as an
+      # upstream, and nginx resolves upstream names at config load and EXITS
+      # if the name does not resolve. service_healthy rather than
+      # service_started because a garage that crash-loops on a bad
+      # GARAGE_RPC_SECRET satisfies service_started the instant the container
+      # is created, hiding the failure until an upload times out.
+      garage:
+        condition: service_healthy
 
   php-fpm:
     build: ./src/backend
@@ -38,6 +48,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:-}
       JWT_TTL: ${JWT_TTL:-3600}
       CACHE_PREFIX: ${CACHE_PREFIX:-}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-s3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-garage}
+      AWS_BUCKET: ${AWS_BUCKET:-coe-products}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-http://garage:3900}
+      # A CLIENT-reachable address, never the compose-internal one above:
+      # Flysystem would otherwise publish http://garage:3900/... in every
+      # product response. /storage/ is proxied to Garage's web endpoint by
+      # infra/nginx/default.conf.
+      AWS_URL: ${AWS_URL:-http://localhost:8080/storage}
+      AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-true}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
@@ -49,6 +71,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      garage:
         condition: service_healthy
 
   postgres:
@@ -82,6 +106,36 @@ services:
       retries: 12
       start_period: 5s
 
+  garage:
+    image: dxflrs/garage:v1.0.1
+    environment:
+      # The cluster RPC credential. Kept out of infra/garage/garage.toml so it
+      # never enters tracked source. The default below is an obvious throwaway
+      # that exists only so a clean clone boots (CR-3) - ./setup.sh overwrites
+      # it with a random 32-byte hex value, and docker-compose.prod.yml refuses
+      # to start without a real one.
+      # EXACTLY 64 hex characters (32 bytes). Garage refuses to start on
+      # anything else, and `depends_on: service_started` would not catch it.
+      # Verify with:
+      #   printf '%s' '<value>' | wc -c                    -> 64
+      #   printf '%s' '<value>' | tr -d '0-9a-f' | wc -c   -> 0
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef}
+    volumes:
+      - ./infra/garage/garage.toml:/etc/garage.toml:ro
+      - garagemeta:/var/lib/garage/meta
+      - garagedata:/var/lib/garage/data
+    healthcheck:
+      # `garage status` speaks the cluster RPC protocol, so an invalid
+      # GARAGE_RPC_SECRET or an unparsable garage.toml fails it. Every other
+      # dependency in this file uses service_healthy; without one here, a
+      # crash-looping garage satisfies `service_started` instantly and the
+      # failure surfaces much later as an upload that times out.
+      test: ["CMD", "/garage", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   nuxt:
     build:
       context: ./src/frontend
@@ -95,6 +149,8 @@ services:
 volumes:
   pgdata:
   redisdata:
+  garagemeta:
+  garagedata:
   backend_vendor:
   backend_storage_framework:
   backend_bootstrap_cache:

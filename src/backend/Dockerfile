@@ -12,9 +12,17 @@ FROM php:8.4-fpm-alpine
 # build time, so two builds of the same commit can ship different clients and
 # a phpredis regression arrives without a diff. 6.3.0 is the version this
 # milestone was developed and tested against; bump it deliberately.
+#
+# gd is a test and tooling dependency: UploadedFile::fake()->image() builds
+# its fixtures with imagecreatetruecolor(). jpeg/webp are configured
+# explicitly because the default build is png-only and ProductImageRequest
+# accepts both, so a .jpg fake would still fatal.
 RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
+      libpng-dev libjpeg-turbo-dev libwebp-dev freetype-dev \
  && apk add --no-cache postgresql-libs icu-libs git unzip \
- && docker-php-ext-install pdo_pgsql bcmath intl opcache \
+      libpng libjpeg-turbo libwebp freetype \
+ && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
+ && docker-php-ext-install pdo_pgsql bcmath intl opcache gd \
  && pecl install redis-6.3.0 \
  && docker-php-ext-enable redis \
  && rm -rf /tmp/pear \

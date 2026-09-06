@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 #[ObservedBy(ProductObserver::class)]
 class Product extends Model
@@ -20,6 +21,7 @@ class Product extends Model
         'slug',
         'sku',
         'description',
+        'image_path',
         'price_cents',
         'stock_quantity',
         'is_active',
@@ -32,6 +34,19 @@ class Product extends Model
             'stock_quantity' => 'integer',
             'is_active' => 'boolean',
         ];
+    }
+
+    /**
+     * A full URL built at serialization time. The column stores only the
+     * object key, so changing the storage endpoint needs no data migration.
+     */
+    public function getImageUrlAttribute(): ?string
+    {
+        if ($this->image_path === null) {
+            return null;
+        }
+
+        return Storage::disk('s3')->url($this->image_path);
     }
 
     public function category(): BelongsTo

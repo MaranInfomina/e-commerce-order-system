@@ -1,0 +1,23 @@
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+# rpc_secret is deliberately NOT set here. Garage reads GARAGE_RPC_SECRET from
+# the environment, which keeps the cluster credential out of tracked source.
+# Compose supplies an obvious throwaway default so `docker compose up` still
+# works on a clean clone (CR-3); ./setup.sh replaces it with a random value,
+# and the production overlay requires a real one.
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage"
+
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage"
+index = "index.html"

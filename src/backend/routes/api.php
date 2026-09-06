@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\ProductController;
+use App\Http\Controllers\Api\V1\ProductImageController;
 use App\Http\Controllers\HealthController;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +52,14 @@ Route::prefix('v1')->group(function () {
         Route::post('/products', [ProductController::class, 'store']);
         Route::patch('/products/{product}', [ProductController::class, 'update']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+
+        // Product images (FR-23). Inside auth:api so an anonymous caller gets
+        // 401 from the Authenticate middleware before any multipart body is
+        // parsed; ProductImageRequest::authorize() and the controller's
+        // $this->authorize('update', $product) both consult ProductPolicy, so
+        // a logged-in customer gets 403.
+        Route::post('/products/{product}/image', [ProductImageController::class, 'store']);
+        Route::delete('/products/{product}/image', [ProductImageController::class, 'destroy']);
     });
 
     // Public reads — FR-18.
