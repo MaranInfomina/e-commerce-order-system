@@ -9,6 +9,7 @@ use App\Http\Requests\ProductUpdateRequest;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
 use App\Queries\ProductListQuery;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Cache;
@@ -55,12 +56,16 @@ class ProductController extends Controller
         // "product:{$product->id}", the canonical spelling. Every padded
         // variant would be an entry no write can bust, that any anonymous
         // caller can mint without limit. Cast to int so the key is always
-        // canonical; non-numeric input never reaches the cache and falls
-        // straight through to findOrFail, which 404s exactly as before.
+        // canonical.
+        //
+        // Non-numeric input is rejected here rather than handed to
+        // findOrFail: that would send `where id = 'abc'` to a bigint column,
+        // and Postgres raises 22P02 — a 500 on unauthenticated input to a
+        // public endpoint. Throwing the exception findOrFail would have
+        // thrown gets the identical NOT_FOUND envelope out of
+        // ApiExceptionRenderer.
         if (! ctype_digit($product)) {
-            return ProductResource::make(
-                Product::with('category')->findOrFail($product)
-            );
+            throw (new ModelNotFoundException)->setModel(Product::class);
         }
 
         $key = 'product:'.(int) $product;
@@ -72,9 +77,9 @@ class ProductController extends Controller
 
         if ($cached === null) {
             // findOrFail throws the same ModelNotFoundException that implicit
-            // binding threw, so the 404 envelope is byte-for-byte unchanged.
-            // Note this is deliberately not Cache::remember: remember() would
-            // store the null on a miss and cache 404s for an hour.
+            // binding threw, so the 404 envelope is byte-for-byte unchanged —
+            // and because it throws before the Cache::put below, a 404 is
+            // never cached.
             $cached = Product::with('category')->findOrFail((int) $product);
 
             Cache::put($key, $cached, 3600);

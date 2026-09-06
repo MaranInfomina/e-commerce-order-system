@@ -12,6 +12,16 @@ use Illuminate\Support\Facades\Cache;
  */
 class ProductObserver
 {
+    /**
+     * Bust after the transaction commits, not at save time.
+     *
+     * Nothing in this milestone wraps a write in a transaction, so there is no
+     * live bug — but the moment one does, `saved` would fire while the row is
+     * still invisible to everyone else, a concurrent reader could re-cache the
+     * pre-write value, and it would stay pinned for the full TTL.
+     */
+    public bool $afterCommit = true;
+
     public function saved(Product $product): void
     {
         $this->forget($product);

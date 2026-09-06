@@ -182,3 +182,31 @@ it('busts cached products when their category is renamed', function () {
         ->assertOk()
         ->assertJsonPath('data.category.name', 'Cookware');
 });
+
+it('normalises a zero-padded product id onto the canonical cache key', function () {
+    // Postgres casts '01' to 1, so /products/01 and /products/1 serve the same
+    // row — but a key built from the raw route string mints two entries, and
+    // ProductObserver only ever forgets "product:{$id}". Every padded variant
+    // would then be an entry no write can bust, that any anonymous caller can
+    // mint without limit. This is the only guard on DEC-20's bounded key count.
+    $product = Product::factory()->create();
+    $padded = '0'.$product->id;
+
+    getJson("/api/v1/products/{$padded}")->assertOk();
+
+    expect(Cache::has("product:{$product->id}"))->toBeTrue()
+        ->and(Cache::has("product:{$padded}"))->toBeFalse();
+
+    // ...and the write path can actually bust what the padded read minted.
+    $product->update(['name' => 'Renamed']);
+
+    expect(Redis::connection('cache')->keys('product:*'))->toBeEmpty();
+});
+
+it('404s on a non-numeric product id instead of a database cast error', function () {
+    // `where id = 'abc'` against a bigint column raises Postgres 22P02, which
+    // surfaces as a 500 on unauthenticated input to a public endpoint.
+    getJson('/api/v1/products/not-a-number')
+        ->assertStatus(404)
+        ->assertJsonPath('error.code', 'NOT_FOUND');
+});
