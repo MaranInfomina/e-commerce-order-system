@@ -69,6 +69,42 @@ it('rejects a customer token', function () use ($customer, $tokenFor) {
         ->assertJsonPath('error.code', 'FORBIDDEN');
 });
 
+it('denies a customer before validation runs, so no unauthorised body is parsed', function () use ($customer, $tokenFor) {
+    // The only test that can see ProductImageRequest::authorize(). Every other
+    // deny case in this file sends a VALID image, so the controller's own
+    // $this->authorize('update', $product) produces the identical 403 —
+    // meaning authorize() could be replaced with `return true` and the whole
+    // suite would stay green, losing the ordering its own comment claims.
+    //
+    // A FormRequest authorizes before it validates, and that ordering is the
+    // point: an unauthorised caller's 2 MB multipart body must never reach the
+    // validator's finfo content inspection before being refused. This is the
+    // image counterpart of ProductAuthorizationTest's "no body at all" probe.
+    $product = Product::factory()->create();
+    $token = $tokenFor($customer());
+
+    // No body at all: `required` would answer 422 if validation ran first.
+    withHeader('Authorization', "Bearer {$token}")
+        ->post("/api/v1/products/{$product->id}/image", [], ['Accept' => 'application/json'])
+        ->assertStatus(403)
+        ->assertJsonPath('error.code', 'FORBIDDEN');
+
+    // And a body that WOULD fail content inspection. Still 403 — a 422 here
+    // would be positive evidence that finfo had already read an unauthorised
+    // upload, which is exactly what the request's comment says cannot happen.
+    $notAnImage = tempnam(sys_get_temp_dir(), 'notimage').'.jpg';
+    file_put_contents($notAnImage, 'not an image, just ASCII');
+
+    withHeader('Authorization', "Bearer {$token}")
+        ->post("/api/v1/products/{$product->id}/image", [
+            'image' => new UploadedFile($notAnImage, 'malware.jpg', 'image/jpeg', null, true),
+        ], ['Accept' => 'application/json'])
+        ->assertStatus(403)
+        ->assertJsonPath('error.code', 'FORBIDDEN');
+
+    @unlink($notAnImage);
+});
+
 it('rejects an unauthenticated upload with 401', function () {
     $product = Product::factory()->create();
 
@@ -251,5 +287,6 @@ it('reports a null image url when there is no image', function () {
     $product = Product::factory()->create();
 
     getJson("/api/v1/products/{$product->id}")
+        ->assertJsonStructure(['data' => ['image_url']])
         ->assertJsonPath('data.image_url', null);
 });
