@@ -215,6 +215,8 @@ Setup complete.
 
   Application   http://localhost:${port}/products
   API health    http://localhost:${port}/api/health
+  RabbitMQ UI   http://localhost:15672 (guest/guest)
+  Mailpit UI    http://localhost:8025
 
   Run tests     ./scripts/test.sh
   Stop          docker compose down
