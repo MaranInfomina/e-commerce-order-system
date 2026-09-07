@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ProductImageController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\HealthController;
 use Illuminate\Support\Facades\Route;
 
@@ -73,6 +74,10 @@ Route::prefix('v1')->group(function () {
         // nonexistent id (admins may see every order, so no ownership check
         // is needed here, unlike the customer-facing GET /orders/{id} above).
         Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
+
+        // Reporting. Admin-only via the viewSalesReport Gate inside
+        // SalesReportRequest::authorize().
+        Route::get('/reports/sales', [ReportController::class, 'sales']);
     });
 
     // Public reads — FR-18.

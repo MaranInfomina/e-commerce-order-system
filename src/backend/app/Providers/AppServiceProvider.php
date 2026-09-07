@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Auth\JwtGuard;
+use App\Models\User;
 use App\Services\TokenDenylist;
 use App\Services\TokenService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -98,5 +100,9 @@ class AppServiceProvider extends ServiceProvider
                 );
             }
         });
+
+        // Admin-only, not tied to a specific model — a Gate rather than a
+        // policy method, since this isn't scoped to any one Eloquent record.
+        Gate::define('viewSalesReport', fn (User $user) => $user->isAdmin());
     }
 }
