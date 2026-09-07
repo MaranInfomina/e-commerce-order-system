@@ -25,12 +25,20 @@ FROM php:8.4-fpm-alpine
 # its own, unlike pdo_pgsql/intl/gd above, but its build DOES need
 # linux-headers on musl/Alpine: sockets.c includes <linux/sock_diag.h>,
 # which glibc distros get for free but Alpine does not ship by default.
+#
+# pcntl is bundled (no external library, no -dev headers needed) and is used
+# only by the checkout concurrency test (tests/Feature/CheckoutConcurrencyTest.php)
+# to fork two real OS processes that race for the same row lock — it's a
+# test-only need, but it's simplest to build it into the one shared image
+# rather than maintain a separate test image. It is unsupported inside a
+# traditional PHP-FPM SAPI worker, but Pest always runs under the plain CLI
+# SAPI, where forking is safe.
 RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
       libpng-dev libjpeg-turbo-dev libwebp-dev freetype-dev linux-headers \
  && apk add --no-cache postgresql-libs icu-libs git unzip \
       libpng libjpeg-turbo libwebp freetype \
  && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
- && docker-php-ext-install pdo_pgsql bcmath intl opcache gd sockets \
+ && docker-php-ext-install pdo_pgsql bcmath intl opcache gd sockets pcntl \
  && pecl install redis-6.3.0 \
  && docker-php-ext-enable redis \
  && rm -rf /tmp/pear \

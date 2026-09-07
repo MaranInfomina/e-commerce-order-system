@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CartController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ProductImageController;
 use App\Http\Controllers\HealthController;
@@ -60,6 +61,10 @@ Route::prefix('v1')->group(function () {
         // a logged-in customer gets 403.
         Route::post('/products/{product}/image', [ProductImageController::class, 'store']);
         Route::delete('/products/{product}/image', [ProductImageController::class, 'destroy']);
+
+        // Checkout. auth:api only, like the cart routes — the order belongs
+        // to whoever is authenticated, never a body-supplied user id.
+        Route::post('/orders', [OrderController::class, 'store']);
     });
 
     // Public reads — FR-18.
