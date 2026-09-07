@@ -1,0 +1,79 @@
+import { authHeaders, decodeJwtRole, resolveApiBase } from '~/utils/api'
+
+interface LoginResponse {
+  token: string
+  token_type: string
+  expires_in: number
+}
+
+export function useAuth() {
+  // A cookie, not localStorage: SSR must be able to read the token to
+  // render an authenticated page on the server, and localStorage does not
+  // exist there.
+  //
+  // `lax`, not `strict`. `strict` withholds the cookie on a cross-site
+  // top-level navigation — a link from an email or a chat client — which is
+  // exactly the case SSR readability exists for: the server would render a
+  // signed-in admin's page as anonymous, bounce them off /products/new, and
+  // then disagree with the client on hydration. Nothing is given up, because
+  // this cookie is NOT an authenticator: JwtGuard reads the Authorization
+  // header and never a cookie, so no cross-site request is authenticated by
+  // it and there is no cookie-CSRF surface to protect. Do not move to
+  // cookie-based auth without adding CSRF protection.
+  //
+  // Not httpOnly, necessarily: the JS that builds the Authorization header
+  // has to read this value, so an XSS steals it exactly as it would from
+  // localStorage. The cookie is chosen for SSR readability, not as a defence.
+  const token = useCookie<string | null>('coe_token', {
+    sameSite: 'lax',
+    // Secure would break plain-HTTP local development; Milestone 4 adds
+    // HTTPS and should set this to true then.
+    secure: false,
+    maxAge: 60 * 60,
+  })
+
+  const config = useRuntimeConfig()
+
+  const base = resolveApiBase(import.meta.server, {
+    apiBaseServer: config.apiBaseServer as string,
+    public: { apiBase: config.public.apiBase as string },
+  })
+
+  const isAuthenticated = computed(() => Boolean(token.value))
+  // No `!== null` guard. Nuxt's useCookie does `ref(cookies[name] ?? default)`
+  // and no default is supplied, so an ABSENT cookie yields `undefined`, not
+  // null — `undefined !== null` is true, and decodeJwtRole would then run
+  // .split() on undefined. That is a TypeError on every anonymous SSR render
+  // of /products, the app's main screen, and the explicit <string | null>
+  // type parameter hides it from TypeScript. Boolean-coerce instead.
+  const isAdmin = computed(() => decodeJwtRole(token.value) === 'admin')
+
+  async function login(email: string, password: string): Promise<void> {
+    const response = await $fetch<LoginResponse>(`${base}/auth/login`, {
+      method: 'POST',
+      body: { email, password },
+    })
+
+    token.value = response.token
+  }
+
+  async function logout(): Promise<void> {
+    if (token.value) {
+      try {
+        await $fetch(`${base}/auth/logout`, {
+          method: 'POST',
+          headers: authHeaders(token.value),
+        })
+      }
+      catch {
+        // The server-side revocation is best-effort: if it fails, clearing
+        // the cookie still logs the user out of this browser, and the token
+        // expires on its own within the hour.
+      }
+    }
+
+    token.value = null
+  }
+
+  return { token, isAuthenticated, isAdmin, login, logout }
+}

@@ -10,6 +10,7 @@ export interface Product {
   slug: string
   sku: string
   description: string | null
+  image_url: string | null
   price_cents: number
   stock_quantity: number
   is_active: boolean
@@ -114,4 +115,37 @@ export function formatCents(cents: number): string {
   const sign = cents < 0 ? '-' : ''
 
   return `${sign}${whole}.${fraction}`
+}
+
+/**
+ * Read the role claim without verifying the signature. This is safe here
+ * because it decides only what the UI renders — the server authorizes
+ * against the database row, never this claim. Total by design: it runs on
+ * every render decision, so a malformed token must return null rather than
+ * throw and blank the page.
+ */
+export function decodeJwtRole(token: string | null | undefined): string | null {
+  // The signature accepts null|undefined because useCookie yields undefined
+  // for an absent cookie; splitting that would throw the very TypeError this
+  // function exists to avoid.
+  if (!token) return null
+
+  const parts = token.split('.')
+
+  if (parts.length !== 3) return null
+
+  try {
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const payload = JSON.parse(atob(padded)) as { role?: unknown }
+
+    return typeof payload.role === 'string' ? payload.role : null
+  }
+  catch {
+    return null
+  }
+}
+
+/** An empty object rather than an empty header: the API rejects `Bearer `. */
+export function authHeaders(token: string | null | undefined): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }

@@ -4,6 +4,7 @@ import { parseApiError, type ProductListState } from '~/utils/api'
 const route = useRoute()
 const router = useRouter()
 const { listProducts, listCategories } = useProductsApi()
+const { isAdmin } = useAuth()
 
 const state = computed<ProductListState>(() => ({
   page: Number(route.query.page ?? 1),
@@ -51,7 +52,7 @@ function pruneQuery(query: Record<string, unknown>): Record<string, string> {
   <section>
     <header class="head">
       <h1>Products</h1>
-      <NuxtLink to="/products/new">New product</NuxtLink>
+      <NuxtLink v-if="isAdmin" to="/products/new">New product</NuxtLink>
     </header>
 
     <ProductFilters
