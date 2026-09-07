@@ -66,6 +66,16 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
       RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-orders}
+      # php-fpm never sends mail itself, but Laravel resolves
+      # config('mail.mailers.smtp') (and therefore these env vars) whenever
+      # the Mail facade or a queued Mailable is constructed — and php-fpm is
+      # where a later task builds that Mailable before handing it to the job
+      # that actually sends it from the queue-worker container.
+      MAIL_MAILER: ${MAIL_MAILER:-smtp}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-orders@coe.local}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-COE Order System}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
@@ -164,6 +174,23 @@ services:
       retries: 12
       start_period: 15s
 
+  mailpit:
+    # v1 (bare) is not a published tag on Docker Hub — only `latest`, `edge`,
+    # and minor-pinned tags like v1.31 exist. v1.31 is the newest v1.x minor
+    # at the time this was written, matching the plan's intent of pinning to
+    # the v1 major line without floating on `latest`.
+    image: axllent/mailpit:v1.31
+    ports:
+      # Web UI only, localhost-bound — dev convenience, matching Garage's
+      # console and RabbitMQ's management UI. SMTP (1025) is internal-only.
+      - "127.0.0.1:8025:8025"
+    # No healthcheck: the image is built FROM scratch with only the mailpit
+    # binary, no shell and no wget/curl to run one with. php-fpm/queue-worker
+    # depend on it with service_started rather than service_healthy below —
+    # an SMTP send that races a still-booting Mailpit fails loudly (visible
+    # in the confirmation-email test), which is an acceptable trade-off for a
+    # dev-only mail catcher with no production equivalent.
+
   queue-worker:
     build: ./src/backend
     # Same image as php-fpm, different command — the established
@@ -238,6 +265,14 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      # No healthcheck on mailpit (see its service definition above), so this
+      # is service_started rather than service_healthy like every other
+      # dependency here — the SendOrderConfirmation job (a later task) sends
+      # mail from this container, and a send that races a still-booting
+      # Mailpit fails loudly rather than silently, which is acceptable for a
+      # dev-only mail catcher.
+      mailpit:
+        condition: service_started
       # Ordering only, not a guarantee: php-fpm has no HEALTHCHECK of its own
       # (nginx already depends on it with the same service_started condition
       # today), so this does not wait for php-fpm's entrypoint to finish
