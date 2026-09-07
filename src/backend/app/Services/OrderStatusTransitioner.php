@@ -17,6 +17,29 @@ use Illuminate\Support\Facades\DB;
 class OrderStatusTransitioner
 {
     /**
+     * The single source of truth for which transitions are legal. Both the
+     * automatic job chain (paid -> shipped -> delivered) and the admin
+     * endpoint's out-of-sequence check consult this map rather than each
+     * hard-coding their own notion of the state machine — pending can also
+     * fail out to payment_failed, but every other state is a dead end here
+     * because nothing may un-ship, un-deliver, or re-pay an order.
+     *
+     * @var array<string, list<string>>
+     */
+    private const EDGES = [
+        Order::STATUS_PENDING => [Order::STATUS_PAID, Order::STATUS_PAYMENT_FAILED],
+        Order::STATUS_PAID => [Order::STATUS_SHIPPED],
+        Order::STATUS_SHIPPED => [Order::STATUS_DELIVERED],
+        Order::STATUS_PAYMENT_FAILED => [],
+        Order::STATUS_DELIVERED => [],
+    ];
+
+    public function isLegalNext(string $from, string $to): bool
+    {
+        return in_array($to, self::EDGES[$from] ?? [], true);
+    }
+
+    /**
      * @return bool  true when this call actually changed the row; false when
      *               the order was already at (or past) $to via another path —
      *               a no-op, not an error.
