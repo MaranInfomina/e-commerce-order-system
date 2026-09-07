@@ -39,6 +39,14 @@ Setting `LOG_CHANNEL=daily` writes there and reproduces a 500 — the same
 for `storage/framework/views`, but this exact path was never made
 writable.
 
+`AUTH_GUARD` (`config/auth.php`) is a code-default-only setting: it exists in
+neither `.env.example` nor either compose file, and defaults to `api`. Every
+route that needs authentication names `auth:api` explicitly, so overriding
+this variable does not change what is protected — it only changes what
+`Auth::user()` resolves to outside an explicit guard, which nothing in this
+milestone relies on. Documented here so it is not mistaken for a switch
+worth setting.
+
 ## Testing
 
 Pest, running against a separate database created by
@@ -90,6 +98,28 @@ touch a developer's live data.
 
 `tests/Pest.php` flushes all three test indexes between every test.
 
+**Carts have no TTL.** `CartRepository` never calls `expire` on `cart:user:{id}`
+— a cart lives in Redis forever until the user clears it or removes every
+line. Acceptable for this milestone's scale; a real deployment would want a
+sliding expiry.
+
+**Every key is written with a `coe_` prefix**, applied at the phpredis client
+level (`config/database.php`'s `options.prefix`), not by Laravel's cache
+store. So a key you write as `product:1` lands in Redis as `coe_product:1`,
+and every `redis-cli` command in this document needs that prefix or it finds
+nothing:
+
+```bash
+docker compose exec redis redis-cli -n 0 --scan --pattern 'coe_product:*'
+docker compose exec redis redis-cli -n 1 --scan --pattern 'coe_cart:*'
+```
+
+**`CACHE_PREFIX` is deliberately empty** (`.env.example`, `docker-compose.yml`).
+Laravel's own cache store would otherwise prepend a second prefix — by
+default `Str::slug(config('app.name')).'_cache_'` — on top of the `coe_` one
+above, so `product:1` would become `coe_laravel_cache_product:1` and every
+documented `redis-cli` command would silently return nothing.
+
 ## Cache invalidation
 
 Only a single product (`product:{id}`) and the category list
@@ -103,6 +133,15 @@ inside every cached product, so a category rename has two invalidation
 triggers, not one. Both observers set `$afterCommit = true` so a bust can
 never race a still-in-flight transaction, even though nothing in this
 milestone currently wraps a write in one.
+
+**`config/cache.php`'s `serializable_classes` is an explicit allow-list, not
+`true`.** Laravel refuses by default to unserialize any class out of the
+cache (a gadget-chain hardening measure), which silently breaks caching a
+model or a collection: the value comes back as `__PHP_Incomplete_Class` —
+not `null` — so a naive `Cache::has()` check reports a hit while every real
+read of the object fails. Only the three classes this milestone actually
+caches are listed: `Product`, `Category`, and Eloquent's `Collection`. Add a
+class here before caching a fourth one, or it will fail the same way.
 
 ## Storage disk
 

@@ -101,7 +101,7 @@ if ($envContent -notmatch '(?m)^JWT_SECRET=.+') {
     $updated = $envContent -replace '(?m)^JWT_SECRET=[^\r\n]*', "JWT_SECRET=$secret"
     [IO.File]::WriteAllText((Resolve-Path .env), $updated, (New-Object Text.UTF8Encoding $false))
 
-    if ((Get-Content .env -Raw) -notmatch '(?m)^JWT_SECRET=[0-9a-f]{64}') {
+    if ((Get-Content .env -Raw) -notmatch '(?m)^JWT_SECRET=[0-9a-f]{64}(\r?$)') {
         throw 'JWT_SECRET was not written to .env'
     }
 }
@@ -126,10 +126,21 @@ docker compose up -d garage
 if ($LASTEXITCODE -ne 0) { throw 'failed to start garage' }
 
 # `up -d` returns when the container starts, not when the RPC layer answers.
+#
+# Same reasoning as the postgres wait loop above: `garage status` always logs
+# an INFO line to stderr even on success, and under $ErrorActionPreference =
+# 'Stop' the `2>$null` redirect turns that into a terminating NativeCommandError
+# regardless of the process's real exit code (proven on this host) -- so
+# without scoping this down, the loop throws on its very first iteration,
+# before Garage is ever given a chance to become ready.
 $ready = $false
 for ($i = 0; $i -lt 30; $i++) {
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
     docker compose exec -T garage /garage status 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($exitCode -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 2
 }
 if (-not $ready) { throw 'garage did not become reachable' }
@@ -141,8 +152,12 @@ if ((docker compose exec -T garage /garage status) -match 'NO ROLE ASSIGNED') {
 }
 
 $keyCreated = $false
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
 docker compose exec -T garage /garage bucket info coe-products 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+$bucketInfoExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($bucketInfoExit -ne 0) {
     docker compose exec -T garage /garage bucket create coe-products
     docker compose exec -T garage /garage key create coe-app
     docker compose exec -T garage /garage bucket allow --read --write coe-products --key coe-app
