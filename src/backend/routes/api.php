@@ -65,6 +65,12 @@ Route::prefix('v1')->group(function () {
         // Checkout. auth:api only, like the cart routes — the order belongs
         // to whoever is authenticated, never a body-supplied user id.
         Route::post('/orders', [OrderController::class, 'store']);
+
+        // Admin status advance. Route-model binding gives a plain 404 for a
+        // nonexistent id (admins may see every order, so no ownership check
+        // is needed here, unlike the customer-facing GET /orders/{id} a
+        // later task adds).
+        Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
     });
 
     // Public reads — FR-18.

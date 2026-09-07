@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\OrderStatusUpdateRequest;
 use App\Http\Requests\OrderStoreRequest;
 use App\Http\Resources\OrderResource;
 use App\Jobs\ProcessPayment;
 use App\Jobs\SendOrderConfirmation;
+use App\Models\Order;
 use App\Repositories\CartRepository;
 use App\Services\CheckoutService;
+use App\Services\OrderStatusTransitioner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\ValidationException;
@@ -87,5 +90,23 @@ class OrderController extends Controller
         return OrderResource::make($order->load(['items', 'statusHistory']))
             ->response()
             ->setStatusCode($order->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function updateStatus(
+        OrderStatusUpdateRequest $request,
+        Order $order,
+        OrderStatusTransitioner $transitioner,
+    ): OrderResource {
+        $target = $request->validated('status');
+
+        if (! $transitioner->isLegalNext($order->status, $target)) {
+            throw ValidationException::withMessages([
+                'status' => ["Cannot move an order from {$order->status} to {$target}."],
+            ]);
+        }
+
+        $transitioner->transition($order, $order->status, $target, 'admin:'.$request->user()->id);
+
+        return OrderResource::make($order->fresh(['items', 'statusHistory']));
     }
 }
