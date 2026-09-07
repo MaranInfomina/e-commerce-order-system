@@ -66,10 +66,12 @@ Route::prefix('v1')->group(function () {
         // to whoever is authenticated, never a body-supplied user id.
         Route::post('/orders', [OrderController::class, 'store']);
 
+        Route::get('/orders', [OrderController::class, 'index']);
+        Route::get('/orders/{order}', [OrderController::class, 'show']);
+
         // Admin status advance. Route-model binding gives a plain 404 for a
         // nonexistent id (admins may see every order, so no ownership check
-        // is needed here, unlike the customer-facing GET /orders/{id} a
-        // later task adds).
+        // is needed here, unlike the customer-facing GET /orders/{id} above).
         Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
     });
 

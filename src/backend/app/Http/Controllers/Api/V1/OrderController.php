@@ -12,7 +12,10 @@ use App\Models\Order;
 use App\Repositories\CartRepository;
 use App\Services\CheckoutService;
 use App\Services\OrderStatusTransitioner;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -90,6 +93,45 @@ class OrderController extends Controller
         return OrderResource::make($order->load(['items', 'statusHistory']))
             ->response()
             ->setStatusCode($order->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function index(Request $request): AnonymousResourceCollection
+    {
+        $orders = Order::query()
+            ->where('user_id', $request->user()->id)
+            ->with(['items', 'statusHistory'])
+            // created_at alone is not a stable sort key: two orders placed
+            // within the same second (as happens back-to-back in tests, and
+            // can happen for real under concurrent checkouts) tie, and
+            // Postgres does not guarantee insertion order for ties. id is
+            // monotonically increasing and never ties, so it breaks the tie
+            // in the same "newest first" direction as created_at.
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+
+        return OrderResource::collection($orders);
+    }
+
+    public function show(Request $request, string $order): OrderResource
+    {
+        // Same raw-string + ctype_digit pattern as ProductController::show:
+        // a non-numeric id must 404, not 500 a bigint column with 22P02.
+        if (! ctype_digit($order)) {
+            throw (new ModelNotFoundException)->setModel(Order::class);
+        }
+
+        $found = Order::with(['items', 'statusHistory'])->find((int) $order);
+
+        // Uniform 404 for "doesn't exist" and "exists but isn't yours" — the
+        // same non-disclosure stance the auth system takes on authentication
+        // failures. Never a 403: that would confirm to an unauthorized
+        // caller that a given order id exists at all.
+        if ($found === null || (! $request->user()->isAdmin() && $found->user_id !== $request->user()->id)) {
+            throw (new ModelNotFoundException)->setModel(Order::class);
+        }
+
+        return OrderResource::make($found);
     }
 
     public function updateStatus(
