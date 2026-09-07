@@ -12,6 +12,7 @@ use App\Services\CheckoutService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class OrderController extends Controller
 {
@@ -49,12 +50,38 @@ class OrderController extends Controller
         // dispatching a second job chain or clearing an already-empty cart on
         // a replay would be a silent duplicate side effect.
         if ($order->wasRecentlyCreated) {
-            Bus::chain([
-                new ProcessPayment($order->id),
-                new SendOrderConfirmation($order->id),
-            ])->onQueue('orders')->dispatch();
+            try {
+                Bus::chain([
+                    new ProcessPayment($order->id),
+                    new SendOrderConfirmation($order->id),
+                ])->onQueue('orders')->dispatch();
+            } catch (Throwable $e) {
+                // Under QUEUE_CONNECTION=sync (forced by phpunit.xml under the
+                // test suite), dispatch() runs the chain's first job INLINE,
+                // in this request. If that job exhausts its retries,
+                // Illuminate\Queue\SyncQueue::handleException() calls
+                // $job->fail($e) — which has already written failed_jobs and,
+                // via ProcessPayment::failed(), already transitioned this
+                // order to payment_failed — and then rethrows purely so a
+                // `queue:work` process would see the failure too. Under the
+                // real rabbitmq connection this call only enqueues and
+                // returns immediately, so it never throws here: this catch
+                // exists solely so a job's own (already-handled) failure
+                // does not also fail the checkout response that triggered it.
+                report($e);
+            }
 
             $this->carts->clear($user->id);
+
+            // Under sync the chain above just ran inline and may have
+            // changed this order's status out from under this in-memory
+            // instance — OrderStatusTransitioner writes through a raw
+            // DB::table() update, and every job re-fetches its OWN Order by
+            // id rather than sharing this object. Refresh so the response
+            // reflects what actually happened instead of the pending
+            // snapshot taken before dispatch. Under the real queue this is a
+            // harmless no-op re-fetch of the same still-pending row.
+            $order->refresh();
         }
 
         return OrderResource::make($order->load(['items', 'statusHistory']))

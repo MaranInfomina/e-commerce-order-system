@@ -7,7 +7,9 @@ use App\Services\TokenDenylist;
 use App\Services\TokenService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -70,5 +72,31 @@ class AppServiceProvider extends ServiceProvider
         // of their own account by burning their bucket.
         RateLimiter::for('register', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
         RateLimiter::for('login', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+
+        // `artisan queue:work` persists a failed job into failed_jobs itself
+        // (Illuminate\Queue\Console\WorkCommand::logFailedJob(), registered
+        // only while that command is running) — the queue-worker container's
+        // real `queue:work rabbitmq` process already gets this for free, so
+        // this listener would double-insert if it ever fired there too.
+        // The one connection that never runs through a Worker at all, and so
+        // never gets that bookkeeping, is `sync`: phpunit.xml forces
+        // QUEUE_CONNECTION=sync for the whole suite specifically so
+        // ProcessPayment/SendOrderConfirmation run inline and
+        // deterministically, and Illuminate\Queue\SyncQueue::handleException()
+        // calls $job->fail($e) — which raises this same JobFailed event —
+        // with no Worker anywhere in the call stack to log it. Scoping to
+        // `sync`, which production never uses, is what makes this a no-op
+        // everywhere a real queue is in play and closes the gap only where
+        // it actually exists.
+        Queue::failing(function (JobFailed $event): void {
+            if ($event->connectionName === 'sync') {
+                app('queue.failer')->log(
+                    $event->connectionName,
+                    $event->job->getQueue(),
+                    $event->job->getRawBody(),
+                    $event->exception,
+                );
+            }
+        });
     }
 }
