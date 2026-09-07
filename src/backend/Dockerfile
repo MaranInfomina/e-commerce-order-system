@@ -17,12 +17,20 @@ FROM php:8.4-fpm-alpine
 # its fixtures with imagecreatetruecolor(). jpeg/webp are configured
 # explicitly because the default build is png-only and ProductImageRequest
 # accepts both, so a .jpg fake would still fatal.
+#
+# sockets is required by php-amqplib (pulled in transitively by
+# vladimir-yuldashev/laravel-queue-rabbitmq) — without it `composer require`
+# refuses to resolve at all ("ext-sockets * -> it is missing from your
+# system"). It's a bundled PHP extension with no runtime shared library of
+# its own, unlike pdo_pgsql/intl/gd above, but its build DOES need
+# linux-headers on musl/Alpine: sockets.c includes <linux/sock_diag.h>,
+# which glibc distros get for free but Alpine does not ship by default.
 RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS postgresql-dev icu-dev \
-      libpng-dev libjpeg-turbo-dev libwebp-dev freetype-dev \
+      libpng-dev libjpeg-turbo-dev libwebp-dev freetype-dev linux-headers \
  && apk add --no-cache postgresql-libs icu-libs git unzip \
       libpng libjpeg-turbo libwebp freetype \
  && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
- && docker-php-ext-install pdo_pgsql bcmath intl opcache gd \
+ && docker-php-ext-install pdo_pgsql bcmath intl opcache gd sockets \
  && pecl install redis-6.3.0 \
  && docker-php-ext-enable redis \
  && rm -rf /tmp/pear \
