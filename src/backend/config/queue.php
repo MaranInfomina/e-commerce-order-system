@@ -73,6 +73,58 @@ return [
             'after_commit' => false,
         ],
 
+        // Milestone 3's async order flow. QUEUE_CONNECTION stays `rabbitmq`
+        // outside tests; phpunit.xml forces it to `sync` for the whole suite
+        // so most tests run jobs synchronously in-process, and the one test
+        // that needs the real broker (tests/Feature/QueueConnectivityTest.php)
+        // resolves this connection explicitly instead of relying on the
+        // default.
+        //
+        // ADAPTED from the plan's original block: the plan's shape (a
+        // top-level 'connection' => AMQPLazyConnection::class, and a nested
+        // 'options.exchange' array plus 'options.queue.declare/passive/
+        // durable/exclusive/auto_delete') matches an OLDER major of
+        // vladimir-yuldashev/laravel-queue-rabbitmq (~v11-v13). The version
+        // that actually resolves against Laravel 13.17/PHP 8.4 is v15.0.2,
+        // whose config schema changed:
+        //   - No 'connection' key needed. v15's
+        //     Queue\Connection\ConfigFactory builds an AMQPConnectionConfig
+        //     that defaults to a LAZY connection already (config key
+        //     'lazy', defaulting to true) via the modern
+        //     AMQPConnectionFactory::create() path; the AMQPLazyConnection
+        //     class-name form is a now-deprecated fallback the connector
+        //     still accepts but the README no longer recommends.
+        //   - 'options.exchange' as a nested array is not read at all by
+        //     v15 (Queue\QueueConfigFactory only reads a FLAT
+        //     'options.queue.exchange' / 'exchange_type' /
+        //     'exchange_routing_key' for the "publish through a named
+        //     exchange" feature, which this task doesn't need — the
+        //     default exchange is fine for a single `orders` queue).
+        //   - 'options.queue.declare/passive/durable/exclusive/auto_delete'
+        //     are not read by v15 either: Queue\RabbitMQQueue::declareQueue()
+        //     always declares durable=true, non-exclusive queues itself, so
+        //     there is no config knob for it any more (and nothing to set:
+        //     durable is already what this task wants).
+        // Verified against vendor/vladimir-yuldashev/laravel-queue-rabbitmq's
+        // README.md and its Queue/QueueConfigFactory.php +
+        // Queue/Connection/ConfigFactory.php source after `composer require`.
+        'rabbitmq' => [
+            'driver' => 'rabbitmq',
+            'queue' => env('RABBITMQ_QUEUE', 'orders'),
+
+            'hosts' => [
+                [
+                    'host' => env('RABBITMQ_HOST', 'rabbitmq'),
+                    'port' => env('RABBITMQ_PORT', 5672),
+                    'user' => env('RABBITMQ_USER', 'guest'),
+                    'password' => env('RABBITMQ_PASSWORD', 'guest'),
+                    'vhost' => env('RABBITMQ_VHOST', '/'),
+                ],
+            ],
+
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

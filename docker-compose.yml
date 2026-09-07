@@ -60,6 +60,12 @@ services:
       # infra/nginx/default.conf.
       AWS_URL: ${AWS_URL:-http://localhost:8080/storage}
       AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-true}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-orders}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
@@ -73,6 +79,8 @@ services:
       redis:
         condition: service_healthy
       garage:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   postgres:
@@ -136,6 +144,113 @@ services:
       retries: 12
       start_period: 10s
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      # Management UI only, localhost-bound — a developer convenience, not
+      # part of the served application, same treatment as Garage's console.
+      - "127.0.0.1:15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      # Exec form, no shell needed — rabbitmq-diagnostics is a real binary on
+      # this image, unlike the scratch-based mailpit image a later task adds.
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  queue-worker:
+    build: ./src/backend
+    # Same image as php-fpm, different command — the established
+    # one-container-one-job convention (nginx/php-fpm/nuxt are already split
+    # this way). --tries/--backoff here are the worker's defaults; individual
+    # jobs may still override $tries/$backoff on themselves.
+    command: ["php", "artisan", "queue:work", "rabbitmq", "--queue=orders", "--tries=3", "--backoff=10"]
+    environment:
+      APP_NAME: ${APP_NAME:-COE Order System}
+      APP_ENV: ${APP_ENV:-local}
+      APP_KEY: ${APP_KEY:-}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      SESSION_DRIVER: ${SESSION_DRIVER:-redis}
+      SESSION_CONNECTION: ${SESSION_CONNECTION:-session}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-rabbitmq}
+      DB_CONNECTION: ${DB_CONNECTION:-pgsql}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-coe_orders}
+      DB_USERNAME: ${DB_USERNAME:-coe}
+      DB_PASSWORD: ${DB_PASSWORD:-local_dev_only}
+      DB_TEST_DATABASE: ${POSTGRES_TEST_DB:-coe_orders_test}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_CACHE_DB: ${REDIS_CACHE_DB:-0}
+      REDIS_DB: ${REDIS_DB:-1}
+      REDIS_SESSION_DB: ${REDIS_SESSION_DB:-2}
+      REDIS_TEST_DB: ${REDIS_TEST_DB:-15}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_TTL: ${JWT_TTL:-3600}
+      CACHE_PREFIX: ${CACHE_PREFIX:-}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-s3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-garage}
+      AWS_BUCKET: ${AWS_BUCKET:-coe-products}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-http://garage:3900}
+      AWS_URL: ${AWS_URL:-http://localhost:8080/storage}
+      AWS_USE_PATH_STYLE_ENDPOINT: ${AWS_USE_PATH_STYLE_ENDPOINT:-true}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-orders}
+      MAIL_MAILER: ${MAIL_MAILER:-smtp}
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-orders@coe.local}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-COE Order System}
+      # AUTO_MIGRATE/AUTO_SEED default to false here even though the base env
+      # var defaults to true: this container shares docker-entrypoint.sh with
+      # php-fpm, and running migrate --force from two containers on every
+      # `docker compose up` is a harmless race today but an unnecessary one —
+      # php-fpm already owns migration/seeding.
+      AUTO_MIGRATE: "false"
+      AUTO_SEED: "false"
+    volumes:
+      - ./src/backend:/var/www/html
+      - backend_vendor:/var/www/html/vendor
+      - backend_storage_framework:/var/www/html/storage/framework
+      - backend_bootstrap_cache:/var/www/html/bootstrap/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      garage:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      # Ordering only, not a guarantee: php-fpm has no HEALTHCHECK of its own
+      # (nginx already depends on it with the same service_started condition
+      # today), so this does not wait for php-fpm's entrypoint to finish
+      # composer install or clearing bootstrap/cache — only for its container
+      # to have started. Both containers share the backend_vendor and
+      # backend_bootstrap_cache named volumes and run the same entrypoint
+      # script, so a genuinely simultaneous first boot can still race a
+      # composer install against a cache-clear. Accepted as a known,
+      # low-probability limitation rather than inventing a new health-gating
+      # mechanism this project has never used.
+      php-fpm:
+        condition: service_started
+
   nuxt:
     build:
       context: ./src/frontend
@@ -151,6 +266,7 @@ volumes:
   redisdata:
   garagemeta:
   garagedata:
+  rabbitmqdata:
   backend_vendor:
   backend_storage_framework:
   backend_bootstrap_cache:
