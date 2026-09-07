@@ -154,11 +154,42 @@ and access key are provisioned by `scripts/setup.sh` / `scripts/setup.ps1`
 (this container has no `garage` CLI to do it itself); the entrypoint only
 logs whether object storage looks configured.
 
+## Queue (RabbitMQ)
+
+`config/queue.php`'s `rabbitmq` connection is the default outside tests
+(`QUEUE_CONNECTION=rabbitmq`); `phpunit.xml` forces it to `sync` for the
+whole suite, so ordinary feature tests run `ProcessPayment` and
+`SendOrderConfirmation` synchronously in-process with no real broker
+involved. Only `tests/Feature/QueueConnectivityTest.php` and
+`tests/Feature/OrderQueueRoundTripTest.php` touch the real broker — both
+skip (rather than fail) when RabbitMQ is not reachable, mirroring
+`StorageConnectivityTest`'s treatment of Garage.
+
+The `queue-worker` container runs `php artisan queue:work rabbitmq
+--queue=orders --tries=3 --backoff=10` continuously. `AdvanceOrderToShipped`
+and `AdvanceOrderToDelivered` are dispatched with a 30-second `delay()` each,
+so a full `pending → paid → shipped → delivered` walk takes about a minute
+to complete unattended after checkout.
+
+## Mail (Mailpit)
+
+`config/mail.php`'s `smtp` mailer points at Mailpit (`mailpit:1025`) outside
+tests; `phpunit.xml` forces `MAIL_MAILER=array`, so no test sends real mail
+except the two files named above, which explicitly override
+`config(['mail.default' => 'smtp'])` before asserting against Mailpit's own
+HTTP API at `mailpit:8025`. Mailpit is dev-only — there is no production
+mail transport configured in this milestone.
+
 ## Schema notes
 
 - **Money is `price_cents`, an integer.** Milestone 3 stores a pricing snapshot on each order, and integers make rounding error impossible. Formatting is the frontend's job.
 - **`stock_quantity` has a database check constraint** (`products_stock_quantity_non_negative`) as well as request validation. Milestone 3's concurrency-safe decrement will rely on it.
 - **Products are soft-deleted.** Milestone 3 adds orders that reference products; a hard delete would break order history.
+- **`orders`/`order_items` snapshot pricing, name, SKU, and image path at
+  checkout time.** An order's line items are never recomputed from live
+  `products` rows — a later price change, rename, or soft-delete of the
+  referenced product does not alter an existing order. `order_items.product_id`
+  is `ON DELETE RESTRICT`, not `CASCADE`.
 
 ## Known limitation: search
 

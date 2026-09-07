@@ -211,6 +211,8 @@ Write-Host 'Setup complete.'
 Write-Host ''
 Write-Host "  Application   http://localhost:$port/products"
 Write-Host "  API health    http://localhost:$port/api/health"
+Write-Host "  RabbitMQ UI   http://localhost:15672 (guest/guest)"
+Write-Host "  Mailpit UI    http://localhost:8025"
 Write-Host ''
 Write-Host '  Run tests     .\scripts\test.ps1'
 Write-Host '  Stop          docker compose down'

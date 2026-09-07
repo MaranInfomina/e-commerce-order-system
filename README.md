@@ -43,6 +43,13 @@ output:
 | `postgres` | PostgreSQL 16 | internal only |
 | `redis` | Redis 7. Cart, cache, sessions, and the JWT denylist | internal only |
 | `garage` | Garage v1, S3-compatible object storage for product images | internal only |
+| `rabbitmq` | RabbitMQ 4, management image. Async order-processing queue | management UI at `localhost:15672` (guest/guest) |
+| `mailpit` | Dev-only SMTP catcher for order-confirmation emails | web UI at `localhost:8025` |
+
+A seventh process, `queue-worker`, runs the same image as `php-fpm` with a
+different command (`php artisan queue:work rabbitmq --queue=orders`) — it
+consumes the payment/confirmation job chain and the automatic
+shipped/delivered progression. It publishes no port.
 
 Only nginx publishes a port, so the whole app is one origin and needs no CORS.
 
@@ -87,6 +94,11 @@ limitations and gotchas."
 | PATCH | `/api/v1/cart/items/{productId}` | Change a line's quantity | Authenticated |
 | DELETE | `/api/v1/cart/items/{productId}` | Remove a line | Authenticated |
 | DELETE | `/api/v1/cart` | Clear the cart | Authenticated |
+| POST | `/api/v1/orders` | Checkout: convert the cart into an order | Authenticated. Optional `Idempotency-Key` header |
+| GET | `/api/v1/orders` | The caller's own order history | Authenticated |
+| GET | `/api/v1/orders/{id}` | One order's detail (own order, or admin) | Authenticated |
+| PATCH | `/api/v1/orders/{id}/status` | Advance an order to `shipped` or `delivered` | Admin |
+| GET | `/api/v1/reports/sales` | Sales summary and per-day breakdown | Admin |
 
 `sort` accepts `name`, `-name`, `price`, `-price`, `created_at`, `-created_at`.
 A leading `-` means descending. An unrecognized value is rejected with 422
@@ -144,6 +156,34 @@ no token gets `401 UNAUTHENTICATED`, a valid `customer` token gets
 `403 FORBIDDEN`. The cart endpoints require only a valid token of either
 role — every user manages their own cart, identified by the token's
 subject, never by a request parameter.
+
+## Orders and payments
+
+Checkout is transactional: stock is locked (`SELECT ... FOR UPDATE`) and
+decremented, and the order plus its line-item snapshot are written, all in
+one database transaction — so two simultaneous checkouts for the last unit
+of a product can never both succeed. Only after that transaction commits
+does the API dispatch a two-job chain (`ProcessPayment` then
+`SendOrderConfirmation`) onto RabbitMQ and return `201`; the response never
+waits on payment or email.
+
+A mock payment always succeeds **unless** the shipping address contains the
+literal text `FAIL_PAYMENT`, in which case it fails deterministically —
+useful for demoing the retry/dead-letter path without waiting on chance. A
+failed payment's job lands in the `failed_jobs` table once its retries
+(`--tries=3`) are exhausted; `SendOrderConfirmation` never runs for that
+order, because a failed job halts a `Bus::chain`.
+
+A paid order advances `paid` → `shipped` → `delivered` automatically (two
+30-second delayed jobs) or via `PATCH /api/v1/orders/{id}/status` as an
+admin, whichever happens first — the other path becomes a harmless no-op,
+never a duplicate or an error, because both share one guarded
+`UPDATE ... WHERE status = :expected` in `OrderStatusTransitioner`.
+
+Repeating a checkout `POST` with the same `Idempotency-Key` header for the
+same user returns the original order (`200`, not `201`) instead of creating
+a duplicate; the key is scoped per user at the database level via a
+`(user_id, idempotency_key)` unique index.
 
 ## Common commands
 
@@ -286,6 +326,22 @@ docker compose exec php-fpm php artisan migrate --force
   flushing everything.
 - **Garage credentials are per-volume.** `docker compose down -v` destroys
   them, and `./setup.sh` must run again to recreate the bucket and key.
+
+- **`queue-worker` shares `php-fpm`'s `backend_vendor` and
+  `backend_bootstrap_cache` named volumes and runs the identical
+  `docker-entrypoint.sh`.** Both containers run `composer install` on first
+  boot if `vendor/autoload.php` is missing or stale, and both clear
+  `bootstrap/cache` at startup — `queue-worker` depends on `php-fpm` with
+  `service_started` (php-fpm has no `HEALTHCHECK` to depend on more
+  strictly — nginx accepts the same limitation today), which orders
+  container *creation* but not entrypoint *completion*. This race was
+  observed more than once during this milestone's own development (a
+  `composer install` corrupting mid-download while another container
+  cleared the volume underneath it) — the fix each time was to stop both
+  containers, delete the `backend_vendor` volume, and let one container
+  install cleanly before starting the other. A real fix would give the
+  queue worker its own volumes or a lighter entrypoint that skips the
+  install/clear steps entirely.
 
 - **A cold `docker compose up` prints five `#app-manifest` pre-transform
   `ERROR` blocks in the `nuxt` container log.** This is an upstream Nuxt
