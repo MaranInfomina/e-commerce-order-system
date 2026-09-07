@@ -11,7 +11,13 @@ import {
 
 export function useProductsApi() {
   const config = useRuntimeConfig()
-  const token = useCookie<string | null>('coe_token')
+  // Read through useAuth() rather than a second useCookie('coe_token') call.
+  // This composable never writes the cookie, so the two refs can't race
+  // today — but a second declaration with no options object is a trap for
+  // whoever adds a write later (e.g. clearing it on a 401): it would land
+  // with the framework defaults instead of the sameSite/secure/maxAge
+  // contract useAuth() declares, silently downgrading the cookie.
+  const { token } = useAuth()
 
   const base = resolveApiBase(import.meta.server, {
     apiBaseServer: config.apiBaseServer as string,

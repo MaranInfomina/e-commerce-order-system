@@ -23,14 +23,17 @@ async function submit() {
     // Return the user where they were headed, defaulting to the catalog.
     // Validated: the query string is attacker-controlled. Only a same-origin
     // absolute path is legal — not an absolute URL, not protocol-relative
-    // `//evil.com`, and not the backslash forms `/\evil.com` or `\/evil.com`
-    // that browsers normalise to it and that a naive "starts with /" check
-    // waves through. navigateTo happens to refuse externals too, but that is
-    // a transitive dependency's regex, and its failure mode is a thrown error
-    // that the catch below reports as a FAILED LOGIN after the token has
-    // already been set.
+    // `//evil.com`, not the backslash forms `/\evil.com` or `\/evil.com` that
+    // browsers normalise to it, and not a leading whitespace/control
+    // character (`/\t/evil.com`, `/\n/evil.com`) — neither `/` nor `\`, so it
+    // slipped past an earlier version of this guard. navigateTo's own
+    // internal check (ufo's protocol-relative regex, which does include
+    // `\s*`) would have caught it anyway, but only by THROWING — which the
+    // catch below turns into a "FAILED LOGIN" banner after the token has
+    // already been set. This guard must be the one that stops it, not a
+    // transitive dependency's side effect.
     const raw = route.query.redirect
-    const intended = typeof raw === 'string' && /^\/(?![/\\])/.test(raw) ? raw : '/products'
+    const intended = typeof raw === 'string' && /^\/(?![/\\\s])/.test(raw) ? raw : '/products'
     await navigateTo(intended)
   }
   catch (error) {

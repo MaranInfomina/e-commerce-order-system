@@ -13,6 +13,11 @@ function install(token: string | null | undefined) {
     public: { apiBase: '/api/v1' },
   }))
   vi.stubGlobal('useCookie', () => ({ value: token }))
+  // useProductsApi reads the token through useAuth() rather than its own
+  // useCookie('coe_token') call (a review fix — two independent refs for the
+  // same cookie name is a trap for a future write), so that global needs
+  // stubbing too, matching the shape useAuth() actually returns.
+  vi.stubGlobal('useAuth', () => ({ token: { value: token } }))
   vi.stubGlobal('$fetch', (url: string, options: Record<string, unknown> = {}) => {
     calls.push({ url, options })
     return Promise.resolve({ data: {} })
