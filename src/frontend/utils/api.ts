@@ -19,6 +19,34 @@ export interface Product {
   updated_at: string
 }
 
+export interface OrderItem {
+  product_id: number
+  product_name: string
+  product_sku: string
+  image_url: string | null
+  unit_price_cents: number
+  quantity: number
+  line_total_cents: number
+}
+
+export interface OrderStatusHistoryEntry {
+  status: string
+  caused_by: string
+  created_at: string
+}
+
+export interface Order {
+  id: number
+  status: string
+  shipping_address: string
+  notes: string | null
+  total_cents: number
+  items: OrderItem[]
+  status_history: OrderStatusHistoryEntry[]
+  created_at: string
+  updated_at: string
+}
+
 export interface Paginated<T> {
   data: T[]
   links: {
