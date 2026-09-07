@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Git Bash on Windows (MSYS) rewrites a bare leading "/" argument as if it
+# were a Windows path before handing it to a native .exe — so every
+# `docker compose exec ... /garage ...` call below would otherwise resolve
+# to something like "C:/Program Files/Git/garage" and fail with "no such
+# file or directory", well before Docker ever sees the argument. This is a
+# no-op on Linux and macOS, where the variable is simply unused.
+export MSYS_NO_PATHCONV=1
+
 cd "$(dirname "$0")/.."
 
 echo "==> Checking prerequisites"
@@ -69,6 +77,51 @@ if ! grep -qE '^APP_KEY=base64:' .env; then
   grep -qE '^APP_KEY=base64:' .env || { echo "ERROR: failed to write APP_KEY into .env" >&2; exit 1; }
 fi
 
+if ! grep -qE '^JWT_SECRET=.+' .env; then
+  echo "==> Generating JWT_SECRET"
+  # Generated locally rather than through `docker compose run`, which would
+  # execute the entrypoint and mix its output into the value — the trap that
+  # corrupted APP_KEY on this project once already.
+  secret="$(docker compose run --rm -T --entrypoint php php-fpm \
+    -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+
+  if [ -z "${secret}" ]; then
+    echo "ERROR: could not generate a JWT_SECRET" >&2
+    exit 1
+  fi
+
+  sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${secret}|" .env
+  rm -f .env.bak
+
+  grep -qE '^JWT_SECRET=[0-9a-f]{64}$' .env || {
+    echo "ERROR: .env JWT_SECRET is malformed after write" >&2; exit 1; }
+fi
+
+if ! grep -qE '^GARAGE_RPC_SECRET=.+' .env; then
+  echo "==> Generating GARAGE_RPC_SECRET"
+  # docker-compose.yml carries a published throwaway default so a clean clone
+  # boots (CR-3). Anyone who can reach Garage's RPC port authenticates with
+  # it, so every real environment must replace it — including this developer
+  # machine, which is what this block is for.
+  rpc="$(docker compose run --rm -T --entrypoint php php-fpm \
+    -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+
+  if [ -z "${rpc}" ]; then
+    echo "ERROR: could not generate a GARAGE_RPC_SECRET" >&2
+    exit 1
+  fi
+
+  sed -i.bak "s|^GARAGE_RPC_SECRET=.*|GARAGE_RPC_SECRET=${rpc}|" .env
+  rm -f .env.bak
+
+  # The same post-write check the JWT_SECRET block has. `sed` exits 0 when its
+  # anchor line is absent — a hand-edited .env, or one copied from a
+  # pre-Task-9 .env.example — so without this the script prints
+  # "Setup complete." while Garage still runs on the published throwaway.
+  grep -qE '^GARAGE_RPC_SECRET=[0-9a-f]{64}$' .env || {
+    echo "ERROR: .env GARAGE_RPC_SECRET is malformed after write" >&2; exit 1; }
+fi
+
 # Deliberately NOT `migrate --force --seed`: the entrypoint invoked above
 # already seeded an empty catalog via app:seed-if-empty. DatabaseSeeder
 # creates rows via factories and is not idempotent, so `--seed` here would
@@ -81,6 +134,71 @@ docker compose run --rm php-fpm php artisan app:seed-if-empty
 
 echo "==> Installing frontend dependencies"
 docker compose run --rm nuxt npm ci
+
+echo "==> Configuring object storage"
+docker compose up -d garage >/dev/null
+
+# `up -d` returns when the container STARTS, not when the RPC layer answers.
+# Without this wait `garage status` fails, and the negated layout test below
+# read that failure as "already laid out" — after which every bucket command
+# fails and setup exits on the credential check with an error pointing nowhere
+# near the cause.
+ready=0
+for _ in $(seq 1 30); do
+  if docker compose exec -T garage /garage status >/dev/null 2>&1; then ready=1; break; fi
+  sleep 2
+done
+if [ "$ready" != 1 ]; then
+  echo "ERROR: garage did not become reachable. Check: docker compose logs garage" >&2
+  exit 1
+fi
+
+# Positive test, not a negated one. The single node must be assigned a zone
+# before Garage serves anything.
+if docker compose exec -T garage /garage status | grep -q 'NO ROLE ASSIGNED'; then
+  node="$(docker compose exec -T garage /garage node id -q | cut -d@ -f1 | tr -d '\r')"
+  docker compose exec -T garage /garage layout assign -z dc1 -c 1G "$node" >/dev/null
+  docker compose exec -T garage /garage layout apply --version 1 >/dev/null
+fi
+
+key_created=0
+if ! docker compose exec -T garage /garage bucket info coe-products >/dev/null 2>&1; then
+  docker compose exec -T garage /garage bucket create coe-products >/dev/null
+  docker compose exec -T garage /garage key create coe-app >/dev/null
+  docker compose exec -T garage /garage bucket allow --read --write coe-products --key coe-app >/dev/null
+  # Anonymous read through Garage's web endpoint, which is what actually
+  # serves image_url. Without it every published image URL is a dead link.
+  docker compose exec -T garage /garage bucket website --allow coe-products >/dev/null
+  key_created=1
+fi
+
+# Write whenever the key was just minted, NOT only when .env is blank.
+# `docker compose down -v` destroys Garage's metadata volume, so the next run
+# creates a brand new key while .env still holds the old id. Guarding on .env
+# alone leaves those stale credentials in place — and wrong credentials fail
+# harder than absent ones: uploads 403, and StorageConnectivityTest FAILS
+# rather than skipping, because credentials are present, just wrong.
+if [ "$key_created" = 1 ] || ! grep -qE '^AWS_ACCESS_KEY_ID=.+' .env; then
+  key_info="$(docker compose exec -T garage /garage key info coe-app --show-secret)"
+  key_id="$(echo "$key_info" | grep -oE 'GK[0-9a-f]{20,}' | head -n 1)"
+  # Strip the key-id line before hunting for the secret: `key info` also
+  # prints authorized-bucket ids, which are also 64 hex, and whichever run
+  # appears first would otherwise land a bucket id in AWS_SECRET_ACCESS_KEY —
+  # a 403 that reads like a configuration bug.
+  key_secret="$(echo "$key_info" | grep -v 'GK[0-9a-f]' | grep -oE '[0-9a-f]{64}' | head -n 1)"
+
+  if [ -z "$key_id" ] || [ -z "$key_secret" ]; then
+    echo "ERROR: could not read Garage credentials" >&2
+    exit 1
+  fi
+
+  sed -i.bak "s|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=${key_id}|" .env
+  sed -i.bak "s|^AWS_SECRET_ACCESS_KEY=.*|AWS_SECRET_ACCESS_KEY=${key_secret}|" .env
+  rm -f .env.bak
+
+  grep -qE '^AWS_ACCESS_KEY_ID=GK[0-9a-f]+$' .env || {
+    echo "ERROR: .env AWS_ACCESS_KEY_ID is malformed after write" >&2; exit 1; }
+fi
 
 echo "==> Starting the full stack"
 docker compose up -d

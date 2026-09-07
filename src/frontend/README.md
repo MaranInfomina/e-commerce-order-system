@@ -27,6 +27,36 @@ docker compose logs -f nuxt
 Components take props and emit events only. That is deliberate: it keeps them
 testable with plain Vue Test Utils, with no Nuxt test runtime to configure.
 
+## Authentication
+
+The JWT is kept in a cookie (`coe_token`, via `useCookie` in
+`composables/useAuth.ts`), not `localStorage`. This is an SSR requirement,
+not a stylistic choice: the server needs to read the token to render an
+authenticated page (e.g. deciding whether to show the "create product"
+control) on its very first response, and `localStorage` does not exist on
+the server. The cookie is `sameSite: 'lax'` and deliberately **not**
+`httpOnly` — the client-side code that builds the `Authorization` header has
+to be able to read it — so an XSS on this app can steal it exactly as it
+could from `localStorage`; this cookie is not being used as a CSRF-style
+authenticator (`JwtGuard` only ever reads the `Authorization` header, never
+a cookie), so there is no cookie-CSRF surface to protect, but there is also
+no additional protection against token theft via XSS. `secure` is hardcoded
+`false` for local HTTP development and must change before any non-localhost
+deployment.
+
+`useAuth()` returns `{ token, isAuthenticated, isAdmin, login, logout }`.
+`isAuthenticated` and `isAdmin` are computed from the cookie:
+`isAdmin` decodes the token's `role` claim client-side
+(`decodeJwtRole` in `utils/api.ts`) purely to decide **what to render** —
+`login`/`logout` call `POST /auth/login` and `POST /auth/logout`. Gating a
+control on `isAdmin` (e.g. `pages/products/index.vue`'s create button, or
+`pages/products/new.vue` redirecting an unauthenticated visitor to
+`/login`) is a rendering decision only: every write endpoint is
+independently authorized server-side against the database row via
+`ProductPolicy`, so a forged or stale claim never grants real access — it
+can only mis-render a button that a 401/403 from the API would immediately
+correct.
+
 ## The SSR base URL rule
 
 The API is reached through two different URLs, and using the wrong one is the

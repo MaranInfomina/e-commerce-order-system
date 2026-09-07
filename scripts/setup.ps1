@@ -90,6 +90,80 @@ if ($envContent -notmatch '(?m)^APP_KEY=base64:') {
     }
 }
 
+$envContent = Get-Content .env -Raw
+if ($envContent -notmatch '(?m)^JWT_SECRET=.+') {
+    Write-Host '==> Generating JWT_SECRET'
+    $secret = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
+        Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
+    if (-not $secret) { throw 'could not generate a JWT_SECRET' }
+
+    $envContent = Get-Content .env -Raw
+    $updated = $envContent -replace '(?m)^JWT_SECRET=[^\r\n]*', "JWT_SECRET=$secret"
+    [IO.File]::WriteAllText((Resolve-Path .env), $updated, (New-Object Text.UTF8Encoding $false))
+
+    if ((Get-Content .env -Raw) -notmatch '(?m)^JWT_SECRET=[0-9a-f]{64}') {
+        throw 'JWT_SECRET was not written to .env'
+    }
+}
+
+$envContent = Get-Content .env -Raw
+if ($envContent -notmatch '(?m)^GARAGE_RPC_SECRET=.+') {
+    Write-Host '==> Generating GARAGE_RPC_SECRET'
+    $rpc = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
+    if (-not $rpc) { throw 'could not generate a GARAGE_RPC_SECRET' }
+
+    $envContent = Get-Content .env -Raw
+    $updated = $envContent -replace '(?m)^GARAGE_RPC_SECRET=[^\r\n]*', "GARAGE_RPC_SECRET=$rpc"
+    [IO.File]::WriteAllText((Resolve-Path .env), $updated, (New-Object Text.UTF8Encoding $false))
+    if ((Get-Content .env -Raw) -notmatch '(?m)^GARAGE_RPC_SECRET=[0-9a-f]{64}(\r?$)') {
+        throw 'GARAGE_RPC_SECRET was not written to .env'
+    }
+}
+
+Write-Host '==> Configuring object storage'
+docker compose up -d garage
+if ($LASTEXITCODE -ne 0) { throw 'failed to start garage' }
+
+# `up -d` returns when the container starts, not when the RPC layer answers.
+$ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+    docker compose exec -T garage /garage status 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 2
+}
+if (-not $ready) { throw 'garage did not become reachable' }
+
+if ((docker compose exec -T garage /garage status) -match 'NO ROLE ASSIGNED') {
+    $node = ((docker compose exec -T garage /garage node id -q) -split '@')[0].Trim()
+    docker compose exec -T garage /garage layout assign -z dc1 -c 1G $node
+    docker compose exec -T garage /garage layout apply --version 1
+}
+
+$keyCreated = $false
+docker compose exec -T garage /garage bucket info coe-products 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    docker compose exec -T garage /garage bucket create coe-products
+    docker compose exec -T garage /garage key create coe-app
+    docker compose exec -T garage /garage bucket allow --read --write coe-products --key coe-app
+    docker compose exec -T garage /garage bucket website --allow coe-products
+    $keyCreated = $true
+}
+
+# Same `down -v` reasoning as the bash path: a new key with a stale .env is
+# worse than no key at all.
+$envContent = Get-Content .env -Raw
+if ($keyCreated -or ($envContent -notmatch '(?m)^AWS_ACCESS_KEY_ID=.+')) {
+    $info      = (docker compose exec -T garage /garage key info coe-app --show-secret) -join "`n"
+    $keyId     = [regex]::Match($info, 'GK[0-9a-f]{20,}').Value
+    $keySecret = [regex]::Match(($info -split "`n" | Where-Object { $_ -notmatch 'GK[0-9a-f]' }) -join "`n", '[0-9a-f]{64}').Value
+    if (-not $keyId -or -not $keySecret) { throw 'could not read Garage credentials' }
+
+    $updated = $envContent -replace '(?m)^AWS_ACCESS_KEY_ID=[^\r\n]*',     "AWS_ACCESS_KEY_ID=$keyId"
+    $updated = $updated    -replace '(?m)^AWS_SECRET_ACCESS_KEY=[^\r\n]*', "AWS_SECRET_ACCESS_KEY=$keySecret"
+    [IO.File]::WriteAllText((Resolve-Path .env), $updated, (New-Object Text.UTF8Encoding $false))
+}
+
 # Deliberately NOT `migrate --force --seed`: the entrypoint invoked above
 # already seeded an empty catalog via app:seed-if-empty. DatabaseSeeder
 # creates rows via factories and is not idempotent, so `--seed` here would

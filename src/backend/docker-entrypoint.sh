@@ -44,6 +44,18 @@ if [ -z "${JWT_SECRET}" ]; then
   echo "[entrypoint] Run ./setup.sh to write a stable secret into .env." >&2
 fi
 
+# Garage is reachable but has no bucket on a fresh volume, and THIS container
+# has no `garage` CLI to create one — that binary lives in the garage
+# container, so scripts/setup.sh does the provisioning. All the entrypoint can
+# do is say so loudly on stderr, so `docker compose up` still boots on a clean
+# clone (CR-3) and the operator knows why uploads will fail until setup runs.
+if [ -n "${AWS_ENDPOINT}" ] && [ -n "${AWS_ACCESS_KEY_ID}" ]; then
+  echo "[entrypoint] object storage configured at ${AWS_ENDPOINT}" >&2
+else
+  echo "[entrypoint] WARNING: object storage is not configured." >&2
+  echo "[entrypoint] Product image upload will fail until ./setup.sh runs." >&2
+fi
+
 echo "[entrypoint] waiting for database ${DB_HOST}:${DB_PORT}" >&2
 attempts=0
 until php -r 'new PDO("pgsql:host=".getenv("DB_HOST").";port=".getenv("DB_PORT").";dbname=".getenv("DB_DATABASE"), getenv("DB_USERNAME"), getenv("DB_PASSWORD"));' 2>/dev/null; do

@@ -41,7 +41,8 @@ output:
 | `php-fpm` | Laravel API | internal only |
 | `nuxt` | Nuxt SSR frontend | internal only |
 | `postgres` | PostgreSQL 16 | internal only |
-| `redis` | Redis 7. Cache and session store | internal only |
+| `redis` | Redis 7. Cart, cache, sessions, and the JWT denylist | internal only |
+| `garage` | Garage v1, S3-compatible object storage for product images | internal only |
 
 Only nginx publishes a port, so the whole app is one origin and needs no CORS.
 
@@ -65,15 +66,27 @@ limitations and gotchas."
 
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/health` | Service and database reachability |
-| GET | `/api/v1/categories` | All categories |
-| GET | `/api/v1/products` | List. Supports `page`, `per_page` (max 100), `search`, `category`, `min_price`, `max_price`, `is_active`, `sort` |
-| GET | `/api/v1/products/{id}` | One product |
-| POST | `/api/v1/products` | Create |
-| PATCH | `/api/v1/products/{id}` | Partial update |
-| DELETE | `/api/v1/products/{id}` | Soft delete |
+| Method | Path | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/health` | Service and database reachability | Public |
+| GET | `/api/v1/categories` | All categories | Public |
+| GET | `/api/v1/products` | List. Supports `page`, `per_page` (max 100), `search`, `category`, `min_price`, `max_price`, `is_active`, `sort` | Public |
+| GET | `/api/v1/products/{id}` | One product | Public |
+| POST | `/api/v1/products` | Create | Admin |
+| PATCH | `/api/v1/products/{id}` | Partial update | Admin |
+| DELETE | `/api/v1/products/{id}` | Soft delete | Admin |
+| POST | `/api/v1/products/{id}/image` | Upload a product image | Admin |
+| DELETE | `/api/v1/products/{id}/image` | Remove a product's image | Admin |
+| POST | `/api/v1/auth/register` | Create an account | Public, throttled 5/min/IP |
+| POST | `/api/v1/auth/login` | Log in; returns a JWT | Public, throttled 5/min/IP |
+| POST | `/api/v1/auth/logout` | Revoke the caller's current token | Authenticated |
+| GET | `/api/v1/auth/me` | The authenticated user | Authenticated |
+| PATCH | `/api/v1/auth/me` | Update the authenticated user's profile | Authenticated |
+| GET | `/api/v1/cart` | The caller's own cart | Authenticated |
+| POST | `/api/v1/cart/items` | Add an item to the cart | Authenticated |
+| PATCH | `/api/v1/cart/items/{productId}` | Change a line's quantity | Authenticated |
+| DELETE | `/api/v1/cart/items/{productId}` | Remove a line | Authenticated |
+| DELETE | `/api/v1/cart` | Clear the cart | Authenticated |
 
 `sort` accepts `name`, `-name`, `price`, `-price`, `created_at`, `-created_at`.
 A leading `-` means descending. An unrecognized value is rejected with 422
@@ -96,6 +109,9 @@ envelope. `details` is only present on validation failures (422):
 | `METHOD_NOT_ALLOWED` | 405 | The route exists but not for this HTTP method |
 | `HTTP_ERROR` | varies | Any other HTTP exception (its own status code, generic message) |
 | `INTERNAL_ERROR` | 500 | Anything else — the message never discloses internal detail |
+| `UNAUTHENTICATED` | 401 | No token, or the token does not verify (missing, malformed, expired, wrong signature, or revoked) |
+| `FORBIDDEN` | 403 | A verified token belonging to a `customer` hit an admin-only endpoint |
+| `TOO_MANY_REQUESTS` | 429 | `POST /api/v1/auth/register` or `POST /api/v1/auth/login` exceeded 5 requests/minute for that IP on that endpoint |
 
 Prices are integer **cents** in `price_cents`, everywhere. No floats touch money.
 
@@ -107,6 +123,27 @@ Two behaviours in the list endpoint look like bugs and are not:
   words `"true"`/`"false"`.
 - An unrecognized `category` slug returns **422**, not an empty list — the
   slug is validated against the category table, not silently filtered.
+
+## Authentication
+
+Two roles: `customer` and `admin`. `POST /api/v1/auth/register` and
+`POST /api/v1/auth/login` are the only public write endpoints; `login`
+returns a signed JWT (`Bearer <token>`) with a one-hour default lifetime
+(`JWT_TTL`). There is no refresh — once a token expires, the user logs in
+again.
+
+`POST /api/v1/auth/logout` revokes the caller's token immediately by adding
+its `jti` to a Redis denylist, rather than waiting for it to expire on its
+own. Every authenticated request checks that denylist, so a logged-out
+token stops working right away even though its signature is still valid.
+
+Reads (`GET` on `/api/v1/products*` and `/api/v1/categories`) are public.
+Writes — creating, updating, or deleting a product, and uploading or
+removing its image — require a valid token belonging to an `admin` user:
+no token gets `401 UNAUTHENTICATED`, a valid `customer` token gets
+`403 FORBIDDEN`. The cart endpoints require only a valid token of either
+role — every user manages their own cart, identified by the token's
+subject, never by a request parameter.
 
 ## Common commands
 
@@ -158,6 +195,44 @@ file, not the effective variable, so the banner can print the wrong URL in
 that case even though the container is actually listening on the right
 port.
 
+`JWT_SECRET` signs and verifies every token; leave it empty for a clean
+clone and the entrypoint generates an ephemeral one and warns (every restart
+then invalidates all issued tokens). `./setup.sh` / `./setup.ps1` writes a
+stable one on first run, and `docker-compose.prod.yml` refuses to start
+without a real value. `JWT_TTL` (default `3600`) is the token lifetime in
+seconds.
+
+`REDIS_HOST` and `REDIS_PORT` point at the `redis` container. Three logical
+databases split what lives in Redis so that flushing one can never destroy
+another: `REDIS_CACHE_DB` (default `0`, product/category cache, safe to
+flush), `REDIS_DB` (default `1`, carts and the JWT denylist, never flushed
+wholesale), and `REDIS_SESSION_DB` (default `2`, sessions). `REDIS_TEST_DB`
+(default `15`) is the carts/denylist index the test suite uses instead —
+`src/backend/tests/Pest.php` flushes it, and phpunit.xml forces the
+cache/session tests onto their own separate indexes, so the suite can never
+touch a developer's live cart or cache data.
+
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`,
+`AWS_BUCKET`, `AWS_ENDPOINT`, and `AWS_USE_PATH_STYLE_ENDPOINT` configure the
+`s3` filesystem disk against Garage. `AWS_ENDPOINT` is the compose-internal
+address Laravel uses to talk to Garage; `AWS_URL` is the address a
+**browser** uses to fetch an image and must be reachable from outside the
+compose network (the default, `http://localhost:8080/storage`, is proxied
+to Garage's web endpoint by `infra/nginx/default.conf`) — leaving it unset
+would publish the internal `http://garage:3900/...` address in every
+product response instead. `./setup.sh` / `./setup.ps1` provisions the
+bucket and an access key on first run and writes the two `AWS_*` credential
+variables into `.env`; the entrypoint only reports whether object storage
+is configured; it does not provision it.
+
+`GARAGE_RPC_SECRET` is the Garage cluster's own RPC credential, unrelated to
+the `AWS_*` application credentials above. `docker-compose.yml` carries an
+obvious published throwaway default so a clean clone still boots (CR-3);
+`./setup.sh` / `./setup.ps1` replaces it with a random value on first run,
+and `docker-compose.prod.yml` refuses to start without a real one. Changing
+it after Garage has initialized requires `docker compose down -v` for the
+`garage` service, because the node identity is derived from it.
+
 `AUTO_MIGRATE` and `AUTO_SEED` (both default `true`) control what the
 `php-fpm` entrypoint does on container start: run `php artisan migrate
 --force`, and run the guarded `php artisan app:seed-if-empty`. Set either to
@@ -170,6 +245,47 @@ docker compose exec php-fpm php artisan migrate --force
 ```
 
 ## Known limitations and gotchas
+
+- **The auth guard fails closed when Redis is down.** A denylist that failed
+  open would silently re-validate every logged-out token during an outage,
+  so the guard lets the Redis error propagate rather than treating an
+  unreachable denylist as "not revoked". Redis is a hard dependency for
+  authenticated routes. Note the failure surfaces as a **5xx, not a 401** —
+  the exception is not caught and mapped, so clients should treat it as
+  "retry later", not "log in again". Nothing in the suite stops Redis and
+  asserts this; it is reasoned from the code, not observed.
+- **Restarting php-fpm without a `JWT_SECRET` in `.env` invalidates every
+  issued token.** The entrypoint generates an ephemeral secret and warns.
+  `./setup.sh` writes a stable one, and `docker-compose.prod.yml` refuses to
+  start without one — an ephemeral key would also differ per replica,
+  401ing roughly half of all requests behind a load balancer.
+- **A password change does not invalidate existing tokens, and does not ask
+  for the current password.** `PATCH /auth/me` accepts a new password from
+  anyone holding a valid token. Revocation is per-`jti` only: there is no
+  `token_version` column and no "log out everywhere". So a stolen token
+  survives the victim changing their password, for up to the remaining hour
+  of its lifetime, and an attacker holding one can change the password
+  themselves. Closing this needs a `current_password` rule plus user-level
+  revocation, and is deliberately deferred — it is a change to the user
+  model and the denylist design, not a bug in what this milestone built.
+- **There is no token refresh.** Tokens last one hour and then stop working
+  mid-session; the user logs in again. Adding refresh without also adding
+  the revocation above would widen the stolen-token window, so the two are
+  deferred together.
+- **The bearer token is stored in a JavaScript-readable cookie.** It cannot
+  be `httpOnly`, because the frontend reads it to build the `Authorization`
+  header, so any XSS yields a usable token. `secure` is also hardcoded
+  `false` for local HTTP development and must be switched before any
+  deployment that is not localhost.
+- **The cart holds no prices.** Lines store only a product and a quantity;
+  pricing is resolved on read. A cart is not a quote, and Milestone 3 takes
+  the pricing snapshot at order time.
+- **Only single products and the category list are cached**, not list
+  queries. List responses vary by search, filter, sort and page, so caching
+  them would mean unbounded keys and an invalidation path that degrades to
+  flushing everything.
+- **Garage credentials are per-volume.** `docker compose down -v` destroys
+  them, and `./setup.sh` must run again to recreate the bucket and key.
 
 - **A cold `docker compose up` prints five `#app-manifest` pre-transform
   `ERROR` blocks in the `nuxt` container log.** This is an upstream Nuxt

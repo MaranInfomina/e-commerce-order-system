@@ -53,6 +53,68 @@ docker compose exec php-fpm ./vendor/bin/pest
 docker compose exec php-fpm ./vendor/bin/pest --filter=health
 ```
 
+## Authentication
+
+`app/Services/TokenService.php` is the only place `firebase/php-jwt` is
+touched: it issues HS256 tokens (`sub`, `role`, `jti`, `iat`, `exp`) from
+`JWT_SECRET`/`JWT_TTL` (`config/jwt.php`), and refuses to construct with a
+key under 32 bytes so a misconfigured secret fails at boot rather than
+presenting as "every token is invalid" at request time. `app/Auth/JwtGuard.php`
+is the `api` guard registered in `config/auth.php`: it reads the
+`Authorization: Bearer` header, verifies the signature via `TokenService`,
+then checks `app/Services/TokenDenylist.php` for the token's `jti` before
+resolving the `User` row from the database. Authorization is a separate
+step — `app/Policies/ProductPolicy.php` reads `$user->isAdmin()` off that
+database row, never the token's `role` claim, so a demotion takes effect on
+the user's very next request instead of waiting for the token to expire.
+
+`TokenDenylist` and `app/Repositories/CartRepository.php` (all cart Redis
+access; controllers never touch Redis directly) both live on the `default`
+Redis connection — logical database 1, `REDIS_DB` — which is never flushed
+wholesale, unlike the `cache` connection. Both classes expose a static
+`connectionName(bool $testing)` specifically so the production arm (`default`)
+is assertable in a test and cannot silently drift onto `cache` while the
+suite stays green.
+
+## Redis layout
+
+Six logical databases, defined in `config/database.php`: three the running
+app uses, and three the test suite mirrors them onto so no test can ever
+touch a developer's live data.
+
+| DB | `.env` variable | Holds | Test mirror |
+|---|---|---|---|
+| 0 | `REDIS_CACHE_DB` | Cached `product:{id}` and `categories:all` reads. Safe to flush. | 14 |
+| 1 | `REDIS_DB` (`default` connection) | Carts (`cart:user:{id}`) and the JWT denylist (`denylist:{jti}`). Never flushed wholesale. | 15 (`REDIS_TEST_DB`) |
+| 2 | `REDIS_SESSION_DB` | Sessions (`session` connection). | 13 |
+
+`tests/Pest.php` flushes all three test indexes between every test.
+
+## Cache invalidation
+
+Only a single product (`product:{id}`) and the category list
+(`categories:all`) are cached — never list queries, which vary by search,
+filter, sort and page. `app/Observers/ProductObserver.php` busts
+`product:{id}` on `saved`, `deleted`, and `restored`; `app/Observers/CategoryObserver.php`
+busts `categories:all` on the same events, and additionally busts
+`product:{id}` for every product in a category whose `name` or `slug`
+actually changed — `ProductResource` embeds the category's name and slug
+inside every cached product, so a category rename has two invalidation
+triggers, not one. Both observers set `$afterCommit = true` so a bust can
+never race a still-in-flight transaction, even though nothing in this
+milestone currently wraps a write in one.
+
+## Storage disk
+
+`config/filesystems.php`'s `s3` disk points at Garage (`AWS_ENDPOINT`,
+path-style addressing) rather than real AWS. `AWS_URL` is a *second*,
+separate address — the one a browser uses to fetch the image back — proxied
+through nginx to Garage's web endpoint; it is never the same value as
+`AWS_ENDPOINT`, which only resolves inside the compose network. The bucket
+and access key are provisioned by `scripts/setup.sh` / `scripts/setup.ps1`
+(this container has no `garage` CLI to do it itself); the entrypoint only
+logs whether object storage looks configured.
+
 ## Schema notes
 
 - **Money is `price_cents`, an integer.** Milestone 3 stores a pricing snapshot on each order, and integers make rounding error impossible. Formatting is the frontend's job.

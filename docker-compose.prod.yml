@@ -12,3 +12,38 @@ services:
       #   docker compose exec php-fpm php artisan migrate --force
       AUTO_MIGRATE: "false"
       AUTO_SEED: "false"
+      # Auto-migrate and auto-seed stay off in production (Milestone 1).
+      SESSION_DRIVER: redis
+      SESSION_CONNECTION: session
+      CACHE_STORE: redis
+
+      # No `:-` defaults on any of these. `${VAR:?message}` makes Compose
+      # refuse to start and print the message when the variable is unset,
+      # which is the behaviour we want in production: the development stack
+      # deliberately tolerates a missing JWT_SECRET by generating an ephemeral
+      # one per container, and that is exactly what must never happen here. An
+      # ephemeral key rotates on every restart — logging everyone out — and two
+      # php-fpm replicas would generate different keys, so roughly half of all
+      # authenticated requests would 401 non-deterministically while looking
+      # like a load-balancer fault.
+      #
+      # APP_KEY has the identical failure shape for encrypted cookies and
+      # Crypt, and the base file's DB_PASSWORD / POSTGRES_PASSWORD defaults are
+      # the constant `local_dev_only`, published in tracked source. The prod
+      # overlay overrode none of those three, so production inherited them.
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in production - an ephemeral key breaks encrypted cookies across restarts and replicas}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in production - the base file default is a published constant}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in production - an ephemeral key breaks auth across restarts and replicas}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set in production}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set in production}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:?AWS_ENDPOINT must be set in production - the default points at the compose-internal garage service}
+      AWS_URL: ${AWS_URL:?AWS_URL must be set in production - the default is http://localhost:8080/storage and would be published in every product response}
+
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in production - the base file default is a published constant}
+
+  garage:
+    environment:
+      # Same reasoning: the development throwaway must not reach production.
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET must be set in production - the development default is a published constant}
