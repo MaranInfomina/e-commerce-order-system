@@ -39,6 +39,26 @@ services:
       AWS_ENDPOINT: ${AWS_ENDPOINT:?AWS_ENDPOINT must be set in production - the default points at the compose-internal garage service}
       AWS_URL: ${AWS_URL:?AWS_URL must be set in production - the default is http://localhost:8080/storage and would be published in every product response}
 
+  queue-worker:
+    environment:
+      # Same image, same secrets, same reasoning as php-fpm above — this
+      # service was added in Milestone 3 and was never given the matching
+      # guards. Without them, a production `queue-worker` would silently
+      # connect to Postgres with the published `local_dev_only` DB_PASSWORD
+      # and read/write Garage with empty AWS credentials, whichever of
+      # php-fpm's guards happened to be forgotten here. APP_KEY and
+      # JWT_SECRET are included for the same rotate-on-restart reason as
+      # php-fpm, even though nothing this worker currently does encrypts a
+      # cookie or verifies a bearer token — a mismatched key between the two
+      # containers would still be a real, silent bug waiting to happen.
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in production - an ephemeral key breaks encrypted cookies across restarts and replicas}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in production - the base file default is a published constant}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in production - an ephemeral key breaks auth across restarts and replicas}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set in production}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set in production}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:?AWS_ENDPOINT must be set in production - the default points at the compose-internal garage service}
+      AWS_URL: ${AWS_URL:?AWS_URL must be set in production - the default is http://localhost:8080/storage and would be published in every product response}
+
   postgres:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in production - the base file default is a published constant}
