@@ -3,8 +3,14 @@ services:
     build: ./infra/nginx
     ports:
       - "${APP_PORT:-8080}:80"
+      - "${APP_HTTPS_PORT:-8443}:443"
+    environment:
+      # Templated into infra/nginx/default.conf.template's HTTP->HTTPS
+      # redirect via the base image's envsubst-on-templates entrypoint.
+      APP_HTTPS_PORT: ${APP_HTTPS_PORT:-8443}
     volumes:
       - ./src/backend:/var/www/html
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
     depends_on:
       php-fpm:
         condition: service_started

@@ -195,6 +195,39 @@ Write-Host '==> Installing frontend dependencies'
 docker compose run --rm nuxt npm ci
 if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
 
+if (-not (Test-Path 'infra/nginx/certs/localhost.crt') -or -not (Test-Path 'infra/nginx/certs/localhost.key')) {
+    Write-Host '==> Generating a self-signed TLS certificate'
+    New-Item -ItemType Directory -Force -Path 'infra/nginx/certs' | Out-Null
+
+    $opensslCmd = Get-Command openssl -ErrorAction SilentlyContinue
+    if ($opensslCmd) {
+        & openssl req -x509 -nodes -newkey rsa:2048 `
+            -keyout 'infra/nginx/certs/localhost.key' `
+            -out 'infra/nginx/certs/localhost.crt' `
+            -days 825 -subj "/CN=localhost" `
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+        if ($LASTEXITCODE -ne 0) { throw 'failed to generate a TLS certificate' }
+    } else {
+        # No usable openssl on PATH (e.g. a Windows host without Git-for-Windows
+        # or a standalone OpenSSL install) -- fall back to generating the cert
+        # inside a container that has it. php-fpm's image (php:8.4-based)
+        # bundles openssl. `docker compose run -v` adds a one-off bind mount
+        # for just this call, independent of php-fpm's usual volumes, so the
+        # generated files land directly at the host path nginx expects.
+        Write-Host '==> openssl not found on PATH; generating the certificate inside a container'
+        docker compose run --rm --no-deps -v "${PWD}/infra/nginx/certs:/certs" --entrypoint openssl php-fpm req -x509 -nodes -newkey rsa:2048 `
+            -keyout '/certs/localhost.key' `
+            -out '/certs/localhost.crt' `
+            -days 825 -subj "/CN=localhost" `
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+        if ($LASTEXITCODE -ne 0) { throw 'failed to generate a TLS certificate inside a container' }
+    }
+
+    if (-not (Test-Path 'infra/nginx/certs/localhost.crt') -or -not (Test-Path 'infra/nginx/certs/localhost.key')) {
+        throw 'TLS certificate generation did not produce localhost.crt/localhost.key'
+    }
+}
+
 Write-Host '==> Starting the full stack'
 docker compose up -d
 if ($LASTEXITCODE -ne 0) { throw 'failed to start the full stack' }
@@ -206,10 +239,15 @@ $portLine = Get-Content .env | Where-Object { $_ -match '^APP_PORT=' } | Select-
 $port = if ($portLine) { ($portLine -replace '^APP_PORT=', '').Trim() } else { '' }
 if ([string]::IsNullOrWhiteSpace($port)) { $port = '8080' }
 
+$httpsPortLine = Get-Content .env | Where-Object { $_ -match '^APP_HTTPS_PORT=' } | Select-Object -Last 1
+$httpsPort = if ($httpsPortLine) { ($httpsPortLine -replace '^APP_HTTPS_PORT=', '').Trim() } else { '' }
+if ([string]::IsNullOrWhiteSpace($httpsPort)) { $httpsPort = '8443' }
+
 Write-Host ''
 Write-Host 'Setup complete.'
 Write-Host ''
 Write-Host "  Application   http://localhost:$port/products"
+Write-Host "  Application   https://localhost:$httpsPort/products (self-signed cert; accept the browser warning)"
 Write-Host "  API health    http://localhost:$port/api/health"
 Write-Host "  RabbitMQ UI   http://localhost:15672 (guest/guest)"
 Write-Host "  Mailpit UI    http://localhost:8025"

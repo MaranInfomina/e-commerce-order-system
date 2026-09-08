@@ -200,6 +200,17 @@ if [ "$key_created" = 1 ] || ! grep -qE '^AWS_ACCESS_KEY_ID=.+' .env; then
     echo "ERROR: .env AWS_ACCESS_KEY_ID is malformed after write" >&2; exit 1; }
 fi
 
+if [ ! -f infra/nginx/certs/localhost.crt ] || [ ! -f infra/nginx/certs/localhost.key ]; then
+  echo "==> Generating a self-signed TLS certificate"
+  mkdir -p infra/nginx/certs
+  openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout infra/nginx/certs/localhost.key \
+    -out infra/nginx/certs/localhost.crt \
+    -days 825 \
+    -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+fi
+
 echo "==> Starting the full stack"
 docker compose up -d
 
@@ -208,12 +219,15 @@ docker compose up -d
 # refuses connections when the host has overridden the port.
 port="$(grep -E '^APP_PORT=' .env | tail -n 1 | cut -d= -f2-)"
 port="${port:-8080}"
+https_port="$(grep -E '^APP_HTTPS_PORT=' .env | tail -n 1 | cut -d= -f2-)"
+https_port="${https_port:-8443}"
 
 cat <<EOF
 
 Setup complete.
 
   Application   http://localhost:${port}/products
+  Application   https://localhost:${https_port}/products (self-signed cert; accept the browser warning)
   API health    http://localhost:${port}/api/health
   RabbitMQ UI   http://localhost:15672 (guest/guest)
   Mailpit UI    http://localhost:8025
