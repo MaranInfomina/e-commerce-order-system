@@ -61,6 +61,21 @@ it('allows exactly one of two simultaneous checkouts to claim the last unit of s
     // makes this purge do anything at all.
     Redis::purge(CartRepository::connectionName(app()->runningUnitTests()));
 
+    // Milestone 4 added two more things that touch Redis on every checkout
+    // request: the `checkout` rate limiter (CACHE_STORE=redis, so
+    // RateLimiter::tooManyAttempts() reads/writes the 'cache' connection)
+    // and RecordHttpMetrics's Prometheus registry (also backed by the
+    // 'cache' connection, deliberately, so php-fpm workers and queue-worker
+    // share one counter store). Both are new, real users of a connection
+    // this test never had to account for before — the exact same
+    // shared-inherited-socket hazard as the cart connection above, just on
+    // a different logical database. Observed the hard way: intermittent
+    // "socket error on read socket" from the Prometheus client and
+    // "unserialize(): Error at offset 0" from RateLimiter's own cache read,
+    // both symptoms of two forked children corrupting one inherited RESP
+    // stream on the 'cache' connection.
+    Redis::purge('cache');
+
     $resultsFile = tempnam(sys_get_temp_dir(), 'coe-race-');
     $pids = [];
 
@@ -80,6 +95,7 @@ it('allows exactly one of two simultaneous checkouts to claim the last unit of s
             // sibling and of the parent.
             DB::purge();
             Redis::purge(CartRepository::connectionName(app()->runningUnitTests()));
+            Redis::purge('cache');
 
             $status = withHeader('Authorization', "Bearer {$token}")
                 ->postJson('/api/v1/orders', ['shipping_address' => '221B Baker Street'])
