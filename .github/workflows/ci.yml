@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/backend/**'
+            frontend:
+              - 'src/frontend/**'
+            infra:
+              - 'docker-compose*.yml'
+              - 'src/backend/Dockerfile'
+              - 'src/frontend/Dockerfile'
+              - '.github/workflows/ci.yml'
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: coe_orders_test
+          POSTGRES_USER: coe
+          POSTGRES_PASSWORD: local_dev_only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U coe -d coe_orders_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_pgsql, bcmath, intl, opcache, gd, sockets, redis, pcntl
+          coverage: none
+
+      - name: Install Composer dependencies
+        working-directory: src/backend
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Pest
+        working-directory: src/backend
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_USERNAME: coe
+          DB_PASSWORD: local_dev_only
+          DB_TEST_DATABASE: coe_orders_test
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
+          JWT_SECRET: ci-only-secret-never-used-outside-this-job-0000000000000000
+          # phpunit.xml deliberately does NOT force CACHE_STORE or
+          # SESSION_DRIVER (see its own comments) so that RedisGuardTest and
+          # SessionDriverGuardTest can catch a real misconfiguration instead
+          # of asserting a hardcoded literal. That means this job must set
+          # them itself, exactly as docker-compose.yml does for the local
+          # php-fpm container — omitting them lets config/cache.php and
+          # config/session.php fall back to their Laravel-skeleton default of
+          # `database`, which fails both guard tests on a clean GitHub
+          # runner even though `docker compose exec` never surfaces it.
+          CACHE_STORE: redis
+          SESSION_DRIVER: redis
+          SESSION_CONNECTION: session
+          # Same shape for the object-storage guard: config/filesystems.php's
+          # `s3` disk has no code-level default for `url`/`endpoint`, so
+          # StorageConnectivityTest's non-skipped "publishes image urls..."
+          # assertion sees a null AWS_URL and fails outright on a bare
+          # runner. These mirror docker-compose.yml's php-fpm defaults
+          # exactly; the test's one real-credential assertion still skips
+          # here since AWS_ACCESS_KEY_ID stays empty (no live Garage in CI).
+          FILESYSTEM_DISK: s3
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+          AWS_DEFAULT_REGION: garage
+          AWS_BUCKET: coe-products
+          AWS_ENDPOINT: http://garage:3900
+          AWS_URL: http://localhost:8080/storage
+          AWS_USE_PATH_STYLE_ENDPOINT: "true"
+        run: ./vendor/bin/pest
+
+      - name: Build the php-fpm image
+        run: docker build -t coe-php-fpm-ci ./src/backend
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
