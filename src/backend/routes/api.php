@@ -67,7 +67,7 @@ Route::prefix('v1')->group(function () {
 
         // Checkout. auth:api only, like the cart routes — the order belongs
         // to whoever is authenticated, never a body-supplied user id.
-        Route::post('/orders', [OrderController::class, 'store']);
+        Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:checkout');
 
         Route::get('/orders', [OrderController::class, 'index']);
         Route::get('/orders/{order}', [OrderController::class, 'show']);
