@@ -15,7 +15,7 @@ use function Pest\Laravel\withHeader;
 it('processes a real order through rabbitmq and delivers a real email via mailpit', function () {
     try {
         app('queue')->connection('rabbitmq')->size('orders');
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         test()->markTestSkipped('RabbitMQ is not reachable: '.$e->getMessage());
     }
 

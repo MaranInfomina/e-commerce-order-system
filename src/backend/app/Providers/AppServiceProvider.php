@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Auth\JwtGuard;
+use App\Http\Middleware\RecordHttpMetrics;
 use App\Models\User;
 use App\Services\TokenDenylist;
 use App\Services\TokenService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
@@ -112,15 +114,15 @@ class AppServiceProvider extends ServiceProvider
         // CollectorRegistry the HTTP metrics middleware writes to, so
         // php-fpm workers and this app's separate queue-worker container
         // both contribute to the same coe_queue_jobs_* counters.
-        Event::listen(function (\Illuminate\Queue\Events\JobProcessed $event) {
-            \App\Http\Middleware\RecordHttpMetrics::registry()->getOrRegisterCounter(
+        Event::listen(function (JobProcessed $event) {
+            RecordHttpMetrics::registry()->getOrRegisterCounter(
                 'coe', 'queue_jobs_processed_total', 'Total queue jobs processed successfully',
                 ['queue', 'job'],
             )->inc([$event->job->getQueue(), $event->job->resolveName()]);
         });
 
-        Event::listen(function (\Illuminate\Queue\Events\JobFailed $event) {
-            \App\Http\Middleware\RecordHttpMetrics::registry()->getOrRegisterCounter(
+        Event::listen(function (JobFailed $event) {
+            RecordHttpMetrics::registry()->getOrRegisterCounter(
                 'coe', 'queue_jobs_failed_total', 'Total queue jobs that failed permanently',
                 ['queue', 'job'],
             )->inc([$event->job->getQueue(), $event->job->resolveName()]);

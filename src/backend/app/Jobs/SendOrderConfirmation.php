@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Http\Middleware\TraceRequests;
 use App\Mail\OrderConfirmationMail;
 use App\Models\Order;
 use Illuminate\Bus\Queueable;
@@ -10,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Mail;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 
 class SendOrderConfirmation implements ShouldQueue
 {
@@ -26,10 +28,10 @@ class SendOrderConfirmation implements ShouldQueue
 
     public function handle(): void
     {
-        $parentContext = \OpenTelemetry\API\Trace\Propagation\TraceContextPropagator::getInstance()
+        $parentContext = TraceContextPropagator::getInstance()
             ->extract($this->traceContext);
 
-        $span = \App\Http\Middleware\TraceRequests::tracerProvider()
+        $span = TraceRequests::tracerProvider()
             ->getTracer('coe-backend')
             ->spanBuilder('job.'.class_basename(static::class))
             ->setParent($parentContext)

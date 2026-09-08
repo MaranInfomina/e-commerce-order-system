@@ -55,7 +55,7 @@ class TraceRequests
             // is the interface, not the concrete TracerProvider class, because
             // create() falls back to a NoopTracerProvider (a different class
             // hierarchy) when OTEL_SDK_DISABLED=true.
-            $provider = (new TracerProviderFactory())->create();
+            $provider = (new TracerProviderFactory)->create();
         }
 
         return $provider;

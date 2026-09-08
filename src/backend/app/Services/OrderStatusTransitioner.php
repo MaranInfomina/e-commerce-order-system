@@ -40,9 +40,9 @@ class OrderStatusTransitioner
     }
 
     /**
-     * @return bool  true when this call actually changed the row; false when
-     *               the order was already at (or past) $to via another path —
-     *               a no-op, not an error.
+     * @return bool true when this call actually changed the row; false when
+     *              the order was already at (or past) $to via another path —
+     *              a no-op, not an error.
      */
     public function transition(Order $order, string $from, string $to, string $causedBy): bool
     {

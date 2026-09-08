@@ -10,7 +10,7 @@ use Tests\Support\QueueConnectivityProbeJob;
 $requiresRabbitMq = function (): void {
     try {
         app('queue')->connection('rabbitmq')->size('orders');
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         test()->markTestSkipped('RabbitMQ is not reachable: '.$e->getMessage());
     }
 };

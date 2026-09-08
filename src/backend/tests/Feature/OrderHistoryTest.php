@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Repositories\CartRepository;
@@ -90,7 +89,7 @@ it('lets an admin view any order by id', function () use ($tokenFor, $orderFor) 
         ->assertJsonPath('data.id', $orderId);
 });
 
-it('keeps an order\'s detail unaffected by a later soft-delete of a referenced product', function () use ($tokenFor, $orderFor) {
+it('keeps an order\'s detail unaffected by a later soft-delete of a referenced product', function () use ($tokenFor) {
     $user = User::factory()->create(['password' => 'correct-horse-battery']);
     $token = $tokenFor($user);
     $product = Product::factory()->create(['stock_quantity' => 5, 'name' => 'Original Name']);

@@ -33,7 +33,7 @@ return new class extends Migration
         // path added later is exactly the kind of thing that might grow a
         // status later.
         DB::statement(
-            "ALTER TABLE orders ADD CONSTRAINT orders_status_check ".
+            'ALTER TABLE orders ADD CONSTRAINT orders_status_check '.
             "CHECK (status IN ('pending','paid','payment_failed','shipped','delivered'))"
         );
         DB::statement('ALTER TABLE orders ADD CONSTRAINT orders_total_cents_non_negative CHECK (total_cents >= 0)');

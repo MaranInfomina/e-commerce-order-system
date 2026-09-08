@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\TraceRequests;
 use App\Http\Requests\OrderStatusUpdateRequest;
 use App\Http\Requests\OrderStoreRequest;
 use App\Http\Resources\OrderResource;
@@ -74,7 +75,7 @@ class OrderController extends Controller
             // ProcessPayment/SendOrderConfirmation spans below would start a
             // brand-new trace instead of continuing this request's, and
             // Jaeger would show two disconnected traces for one checkout.
-            $traceContext = \App\Http\Middleware\TraceRequests::currentContext();
+            $traceContext = TraceRequests::currentContext();
 
             $processPayment = new ProcessPayment($order->id);
             $sendOrderConfirmation = new SendOrderConfirmation($order->id);

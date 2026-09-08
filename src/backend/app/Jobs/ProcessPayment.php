@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Http\Middleware\TraceRequests;
 use App\Models\Order;
 use App\Services\OrderStatusTransitioner;
 use Illuminate\Bus\Queueable;
@@ -9,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 use RuntimeException;
 use Throwable;
 
@@ -30,10 +32,10 @@ class ProcessPayment implements ShouldQueue
 
     public function handle(OrderStatusTransitioner $transitioner): void
     {
-        $parentContext = \OpenTelemetry\API\Trace\Propagation\TraceContextPropagator::getInstance()
+        $parentContext = TraceContextPropagator::getInstance()
             ->extract($this->traceContext);
 
-        $span = \App\Http\Middleware\TraceRequests::tracerProvider()
+        $span = TraceRequests::tracerProvider()
             ->getTracer('coe-backend')
             ->spanBuilder('job.'.class_basename(static::class))
             ->setParent($parentContext)
