@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: coe-backend
+    # routes/api.php is loaded through Laravel's default apiPrefix ('api'),
+    # so every route it defines - including this one, registered at the
+    # outer level alongside /health - is actually served at /api/metrics,
+    # not /metrics. Confirmed against the existing HealthTest, which hits
+    # /api/health for the sibling route.
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ["nginx:80"]

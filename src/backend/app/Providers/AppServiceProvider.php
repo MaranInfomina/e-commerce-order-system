@@ -10,6 +10,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -99,6 +100,24 @@ class AppServiceProvider extends ServiceProvider
                     $event->exception,
                 );
             }
+        });
+
+        // Queue job-lifecycle metrics, fed to the same Redis-backed
+        // CollectorRegistry the HTTP metrics middleware writes to, so
+        // php-fpm workers and this app's separate queue-worker container
+        // both contribute to the same coe_queue_jobs_* counters.
+        Event::listen(function (\Illuminate\Queue\Events\JobProcessed $event) {
+            \App\Http\Middleware\RecordHttpMetrics::registry()->getOrRegisterCounter(
+                'coe', 'queue_jobs_processed_total', 'Total queue jobs processed successfully',
+                ['queue', 'job'],
+            )->inc([$event->job->getQueue(), $event->job->resolveName()]);
+        });
+
+        Event::listen(function (\Illuminate\Queue\Events\JobFailed $event) {
+            \App\Http\Middleware\RecordHttpMetrics::registry()->getOrRegisterCounter(
+                'coe', 'queue_jobs_failed_total', 'Total queue jobs that failed permanently',
+                ['queue', 'job'],
+            )->inc([$event->job->getQueue(), $event->job->resolveName()]);
         });
 
         // Admin-only, not tied to a specific model — a Gate rather than a
