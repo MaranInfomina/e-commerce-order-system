@@ -17,9 +17,11 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.16",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
     "happy-dom": "^20.11.8",
+    "tailwindcss": "^4.1.16",
     "vitest": "^4.1.11"
   }
 }

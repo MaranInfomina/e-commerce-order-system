@@ -1,3 +1,5 @@
+import tailwindcss from '@tailwindcss/vite'
+
 export default defineNuxtConfig({
   devtools: { enabled: true },
 
@@ -18,6 +20,7 @@ export default defineNuxtConfig({
   },
 
   vite: {
+    plugins: [tailwindcss()],
     server: {
       hmr: {
         // The browser talks to nginx on APP_PORT, not directly to 3000.

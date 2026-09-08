@@ -84,13 +84,19 @@ async function submit(payload: ProductInput) {
 
 <template>
   <section>
-    <header class="head">
-      <h1>New product</h1>
-      <NuxtLink to="/products">Back to products</NuxtLink>
+    <header class="mb-6 flex items-baseline justify-between">
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">New product</h1>
+      <NuxtLink to="/products" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        &larr; Back to products
+      </NuxtLink>
     </header>
 
-    <p v-if="categoriesLoadError" class="banner">{{ categoriesLoadError.message }}</p>
-    <p v-if="formError" class="banner">{{ formError }}</p>
+    <p v-if="categoriesLoadError" class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ categoriesLoadError.message }}
+    </p>
+    <p v-if="formError" class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ formError }}
+    </p>
 
     <ProductForm
       :categories="categoriesResponse?.data ?? []"
@@ -100,19 +106,3 @@ async function submit(payload: ProductInput) {
     />
   </section>
 </template>
-
-<style scoped>
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: var(--space-3);
-}
-
-.banner {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-error);
-  border-radius: var(--radius);
-  color: var(--color-error);
-}
-</style>

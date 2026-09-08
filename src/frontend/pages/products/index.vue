@@ -50,9 +50,15 @@ function pruneQuery(query: Record<string, unknown>): Record<string, string> {
 
 <template>
   <section>
-    <header class="head">
-      <h1>Products</h1>
-      <NuxtLink v-if="isAdmin" to="/products/new">New product</NuxtLink>
+    <header class="mb-6 flex items-baseline justify-between">
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">Products</h1>
+      <NuxtLink
+        v-if="isAdmin"
+        to="/products/new"
+        class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500"
+      >
+        New product
+      </NuxtLink>
     </header>
 
     <ProductFilters
@@ -63,12 +69,14 @@ function pruneQuery(query: Record<string, unknown>): Record<string, string> {
       @update="applyFilters"
     />
 
-    <p v-if="apiError" class="error">{{ apiError.message }}</p>
+    <p v-if="apiError" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ apiError.message }}
+    </p>
 
     <template v-else>
-      <p class="count">{{ productsResponse?.meta.total ?? 0 }} products</p>
+      <p class="mb-4 text-sm text-slate-500">{{ productsResponse?.meta.total ?? 0 }} products</p>
 
-      <ProductTable :products="productsResponse?.data ?? []" />
+      <ProductCardGrid :products="productsResponse?.data ?? []" />
 
       <Pagination
         :current-page="productsResponse?.meta.current_page ?? 1"
@@ -78,21 +86,3 @@ function pruneQuery(query: Record<string, unknown>): Record<string, string> {
     </template>
   </section>
 </template>
-
-<style scoped>
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: var(--space-3);
-}
-
-.count {
-  color: var(--color-muted);
-  font-size: 0.875rem;
-}
-
-.error {
-  color: var(--color-error);
-}
-</style>

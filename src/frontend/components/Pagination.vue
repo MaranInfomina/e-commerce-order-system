@@ -20,17 +20,18 @@ const displayPage = computed(() => {
 </script>
 
 <template>
-  <nav class="pagination" aria-label="Pagination">
+  <nav class="mt-8 flex items-center justify-center gap-4" aria-label="Pagination">
     <button
       data-test="prev"
       type="button"
       :disabled="props.currentPage <= 1"
+      class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
       @click="emit('change', props.currentPage - 1)"
     >
       Previous
     </button>
 
-    <span data-test="status">
+    <span data-test="status" class="text-sm text-slate-500">
       Page {{ displayPage }} of {{ Math.max(props.lastPage, 1) }}
     </span>
 
@@ -38,31 +39,10 @@ const displayPage = computed(() => {
       data-test="next"
       type="button"
       :disabled="props.currentPage >= props.lastPage"
+      class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
       @click="emit('change', props.currentPage + 1)"
     >
       Next
     </button>
   </nav>
 </template>
-
-<style scoped>
-.pagination {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  margin-top: var(--space-3);
-}
-
-button {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  cursor: pointer;
-}
-
-button:disabled {
-  color: var(--color-muted);
-  cursor: not-allowed;
-}
-</style>

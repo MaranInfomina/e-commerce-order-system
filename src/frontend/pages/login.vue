@@ -48,70 +48,54 @@ async function submit() {
 </script>
 
 <template>
-  <section class="login">
-    <h1>Sign in</h1>
+  <section class="mx-auto flex max-w-sm flex-col gap-6 py-12">
+    <h1 class="text-center text-2xl font-bold tracking-tight text-slate-900">Sign in</h1>
 
-    <p v-if="formError" class="banner" data-test="form-error">{{ formError }}</p>
+    <div class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <p
+        v-if="formError"
+        class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        data-test="form-error"
+      >
+        {{ formError }}
+      </p>
 
-    <form @submit.prevent="submit">
-      <label for="email">Email</label>
-      <input id="email" v-model="email" type="email" data-test="field-email" required>
-      <p v-if="fieldErrors.email" class="field-error">{{ fieldErrors.email[0] }}</p>
+      <form class="flex flex-col gap-4" @submit.prevent="submit">
+        <label for="email" class="flex flex-col gap-1 text-sm font-medium text-slate-600">
+          Email
+          <input
+            id="email"
+            v-model="email"
+            type="email"
+            data-test="field-email"
+            required
+            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+          <span v-if="fieldErrors.email" class="text-xs text-red-600">{{ fieldErrors.email[0] }}</span>
+        </label>
 
-      <label for="password">Password</label>
-      <input id="password" v-model="password" type="password" data-test="field-password" required>
-      <p v-if="fieldErrors.password" class="field-error">{{ fieldErrors.password[0] }}</p>
+        <label for="password" class="flex flex-col gap-1 text-sm font-medium text-slate-600">
+          Password
+          <input
+            id="password"
+            v-model="password"
+            type="password"
+            data-test="field-password"
+            required
+            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+          <span v-if="fieldErrors.password" class="text-xs text-red-600">{{ fieldErrors.password[0] }}</span>
+        </label>
 
-      <button type="submit" :disabled="submitting" data-test="submit">
-        {{ submitting ? 'Signing in…' : 'Sign in' }}
-      </button>
-    </form>
+        <button
+          type="submit"
+          :disabled="submitting"
+          data-test="submit"
+          class="mt-2 w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {{ submitting ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+    </div>
   </section>
 </template>
-
-<style scoped>
-.login {
-  max-width: 22rem;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-label {
-  font-weight: 600;
-}
-
-input {
-  padding: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  color: inherit;
-}
-
-.banner,
-.field-error {
-  color: var(--color-error);
-  margin: 0;
-}
-
-button {
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius);
-  background: var(--color-accent);
-  color: var(--color-bg);
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatCents, parseApiError } from '~/utils/api'
+import { formatCents, orderStatusClass, parseApiError } from '~/utils/api'
 
 definePageMeta({
   middleware: [
@@ -27,52 +27,61 @@ const apiError = computed(() => (error.value ? parseApiError(error.value) : null
 </script>
 
 <template>
-  <section>
-    <header class="head">
-      <h1>Order #{{ route.params.id }}</h1>
-      <NuxtLink to="/orders">Back to orders</NuxtLink>
+  <section class="mx-auto max-w-3xl">
+    <header class="mb-6 flex items-baseline justify-between">
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">Order #{{ route.params.id }}</h1>
+      <NuxtLink to="/orders" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        &larr; Back to orders
+      </NuxtLink>
     </header>
 
-    <p v-if="apiError" class="error">{{ apiError.message }}</p>
+    <p v-if="apiError" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ apiError.message }}
+    </p>
 
     <template v-else-if="orderResponse">
-      <p class="status" :data-status="orderResponse.data.status">{{ orderResponse.data.status }}</p>
+      <div class="mb-6 flex items-center justify-between rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <span
+          class="w-fit rounded-full px-3 py-1 text-sm font-medium"
+          :class="orderStatusClass(orderResponse.data.status)"
+          :data-status="orderResponse.data.status"
+        >
+          {{ orderResponse.data.status }}
+        </span>
+        <span class="text-lg font-bold text-slate-900">
+          Total: {{ formatCents(orderResponse.data.total_cents) }}
+        </span>
+      </div>
 
-      <OrderItemsList :items="orderResponse.data.items" />
+      <div class="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Items</h2>
+        <OrderItemsList :items="orderResponse.data.items" />
+      </div>
 
-      <p class="total">Total: {{ formatCents(orderResponse.data.total_cents) }}</p>
+      <div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <section class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">Shipping address</h2>
+          <p class="text-sm text-slate-900">{{ orderResponse.data.shipping_address }}</p>
+          <p v-if="orderResponse.data.notes" class="mt-2 text-sm text-slate-500">{{ orderResponse.data.notes }}</p>
+        </section>
 
-      <section class="address">
-        <h2>Shipping address</h2>
-        <p>{{ orderResponse.data.shipping_address }}</p>
-        <p v-if="orderResponse.data.notes" class="notes">{{ orderResponse.data.notes }}</p>
-      </section>
-
-      <section class="timeline">
-        <h2>Status history</h2>
-        <ul>
-          <li v-for="(entry, index) in orderResponse.data.status_history" :key="index">
-            {{ entry.status }} — {{ new Date(entry.created_at).toLocaleString() }}
-          </li>
-        </ul>
-      </section>
+        <section class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Status history</h2>
+          <ul class="flex flex-col gap-3">
+            <li
+              v-for="(entry, index) in orderResponse.data.status_history"
+              :key="index"
+              class="flex items-start gap-3 text-sm"
+            >
+              <span class="mt-1.5 h-2 w-2 flex-none rounded-full bg-indigo-500" />
+              <span>
+                <span class="font-medium capitalize text-slate-900">{{ entry.status }}</span>
+                <span class="block text-xs text-slate-400">{{ new Date(entry.created_at).toLocaleString() }}</span>
+              </span>
+            </li>
+          </ul>
+        </section>
+      </div>
     </template>
   </section>
 </template>
-
-<style scoped>
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: var(--space-3);
-}
-
-.error {
-  color: var(--color-error);
-}
-
-.notes {
-  color: var(--color-muted);
-}
-</style>

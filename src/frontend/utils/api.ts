@@ -136,6 +136,19 @@ export function parseApiError(error: unknown): ParsedApiError {
   }
 }
 
+const ORDER_STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-slate-100 text-slate-600',
+  paid: 'bg-blue-50 text-blue-700',
+  shipped: 'bg-amber-50 text-amber-700',
+  delivered: 'bg-emerald-50 text-emerald-700',
+  cancelled: 'bg-red-50 text-red-700',
+}
+
+/** Tailwind classes for an order-status badge. Falls back to the neutral style for any status not listed above. */
+export function orderStatusClass(status: string): string {
+  return ORDER_STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-600'
+}
+
 /** Integer cents to a display string. Money never becomes a float. */
 export function formatCents(cents: number): string {
   const whole = Math.floor(Math.abs(cents) / 100)

@@ -19,39 +19,44 @@ async function signOut() {
 <template>
   <NuxtRouteAnnouncer />
 
-  <header class="site">
-    <NuxtLink to="/products" class="brand">Catalog</NuxtLink>
+  <div class="flex min-h-screen flex-col">
+    <header class="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
+      <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <NuxtLink to="/products" class="text-lg font-bold tracking-tight text-slate-900 hover:text-indigo-600">
+          COE&nbsp;Store
+        </NuxtLink>
 
-    <button v-if="isAuthenticated" type="button" data-test="sign-out" @click="signOut">
-      Sign out
-    </button>
-    <NuxtLink v-else :to="signInHref" data-test="sign-in">Sign in</NuxtLink>
-  </header>
+        <nav class="flex items-center gap-4">
+          <NuxtLink
+            to="/orders"
+            class="hidden text-sm font-medium text-slate-600 hover:text-indigo-600 sm:block"
+          >
+            Your orders
+          </NuxtLink>
 
-  <NuxtPage />
+          <button
+            v-if="isAuthenticated"
+            type="button"
+            data-test="sign-out"
+            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+            @click="signOut"
+          >
+            Sign out
+          </button>
+          <NuxtLink
+            v-else
+            :to="signInHref"
+            data-test="sign-in"
+            class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500"
+          >
+            Sign in
+          </NuxtLink>
+        </nav>
+      </div>
+    </header>
+
+    <main class="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+      <NuxtPage />
+    </main>
+  </div>
 </template>
-
-<style scoped>
-.site {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: var(--space-3);
-}
-
-.brand {
-  font-weight: 600;
-}
-
-button {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  color: inherit;
-  cursor: pointer;
-}
-</style>

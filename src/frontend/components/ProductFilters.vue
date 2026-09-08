@@ -40,15 +40,38 @@ function submit() {
 </script>
 
 <template>
-  <form class="filters" @submit.prevent="submit">
-    <label>
+  <form
+    class="mb-8 flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+    @submit.prevent="submit"
+  >
+    <label class="flex min-w-48 flex-1 flex-col gap-1 text-sm font-medium text-slate-600">
       Search
-      <input v-model="search" type="search" placeholder="name or description">
+      <div class="relative">
+        <svg
+          class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="9" cy="9" r="6" />
+          <path d="m17 17-4-4" stroke-linecap="round" />
+        </svg>
+        <input
+          v-model="search"
+          type="search"
+          placeholder="Name or description"
+          class="w-full rounded-md border border-slate-300 py-1.5 pl-9 pr-3 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+      </div>
     </label>
 
-    <label>
+    <label class="flex flex-col gap-1 text-sm font-medium text-slate-600">
       Category
-      <select v-model="category">
+      <select
+        v-model="category"
+        class="rounded-md border border-slate-300 py-1.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      >
         <option value="">All</option>
         <option v-for="option in props.categories" :key="option.id" :value="option.slug">
           {{ option.name }}
@@ -56,9 +79,12 @@ function submit() {
       </select>
     </label>
 
-    <label>
+    <label class="flex flex-col gap-1 text-sm font-medium text-slate-600">
       Sort
-      <select v-model="sort">
+      <select
+        v-model="sort"
+        class="rounded-md border border-slate-300 py-1.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      >
         <option value="">Newest first</option>
         <option value="name">Name A-Z</option>
         <option value="-name">Name Z-A</option>
@@ -68,40 +94,11 @@ function submit() {
       </select>
     </label>
 
-    <button type="submit">Apply</button>
+    <button
+      type="submit"
+      class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500"
+    >
+      Apply
+    </button>
   </form>
 </template>
-
-<style scoped>
-.filters {
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin-bottom: var(--space-4);
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: 0.875rem;
-  color: var(--color-muted);
-}
-
-input, select {
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  font-size: 1rem;
-}
-
-button {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius);
-  background: var(--color-accent);
-  color: white;
-  cursor: pointer;
-}
-</style>
