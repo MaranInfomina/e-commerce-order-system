@@ -6,7 +6,17 @@ use App\Rules\FitsBcrypt;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'UpdateProfileRequest',
+    properties: [
+        new OA\Property(property: 'name', type: 'string', maxLength: 255),
+        new OA\Property(property: 'email', type: 'string', format: 'email', maxLength: 255),
+        new OA\Property(property: 'password', type: 'string', format: 'password', minLength: 12),
+        new OA\Property(property: 'password_confirmation', type: 'string', format: 'password'),
+    ],
+)]
 class UpdateProfileRequest extends FormRequest
 {
     public function authorize(): bool

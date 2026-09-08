@@ -9,9 +9,29 @@ use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
 class ProductImageController extends Controller
 {
+    #[OA\Post(
+        path: '/api/v1/products/{product}/image',
+        summary: "Upload a product's image (admin only)",
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        requestBody: new OA\RequestBody(content: new OA\MediaType(
+            mediaType: 'multipart/form-data',
+            schema: new OA\Schema(ref: '#/components/schemas/ProductImageRequest'),
+        )),
+        responses: [
+            new OA\Response(response: 200, description: 'Product with the new image', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Product')])),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 403, description: 'Not an admin', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 404, description: 'Not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function store(ProductImageRequest $request, Product $product): ProductResource
     {
         $this->authorize('update', $product);
@@ -41,6 +61,20 @@ class ProductImageController extends Controller
         return ProductResource::make($product->fresh()->load('category'));
     }
 
+    #[OA\Delete(
+        path: '/api/v1/products/{product}/image',
+        summary: "Remove a product's image (admin only)",
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: 'Image removed'),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 403, description: 'Not an admin', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 404, description: 'Not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function destroy(Product $product): JsonResponse
     {
         $this->authorize('update', $product);

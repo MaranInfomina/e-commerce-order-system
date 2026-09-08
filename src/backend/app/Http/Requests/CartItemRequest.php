@@ -4,7 +4,17 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'CartItemRequest',
+    description: 'product_id is required when adding a new line (POST /cart/items); the update route (PATCH /cart/items/{product}) takes the product from the URL and only reads quantity.',
+    required: ['quantity'],
+    properties: [
+        new OA\Property(property: 'product_id', type: 'integer', description: 'Required on POST /cart/items, ignored on PATCH /cart/items/{product}.'),
+        new OA\Property(property: 'quantity', type: 'integer', minimum: 1, maximum: CartItemRequest::MAX_QUANTITY),
+    ],
+)]
 class CartItemRequest extends FormRequest
 {
     /** Ceiling on the stored quantity of a single cart line. */

@@ -5,7 +5,15 @@ namespace App\Http\Requests;
 use App\Models\Order;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'OrderStatusUpdateRequest',
+    required: ['status'],
+    properties: [
+        new OA\Property(property: 'status', type: 'string', enum: ['shipped', 'delivered'], description: 'The only two states an admin may set directly; payment outcomes are automatic.'),
+    ],
+)]
 class OrderStatusUpdateRequest extends FormRequest
 {
     public function authorize(): bool

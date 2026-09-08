@@ -4,7 +4,34 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'Order',
+    properties: [
+        new OA\Property(property: 'id', type: 'integer'),
+        new OA\Property(property: 'status', type: 'string', enum: ['pending', 'paid', 'payment_failed', 'shipped', 'delivered']),
+        new OA\Property(property: 'shipping_address', type: 'string'),
+        new OA\Property(property: 'notes', type: 'string', nullable: true),
+        new OA\Property(property: 'total_cents', type: 'integer'),
+        new OA\Property(property: 'items', type: 'array', items: new OA\Items(properties: [
+            new OA\Property(property: 'product_id', type: 'integer'),
+            new OA\Property(property: 'product_name', type: 'string'),
+            new OA\Property(property: 'product_sku', type: 'string'),
+            new OA\Property(property: 'image_url', type: 'string', nullable: true),
+            new OA\Property(property: 'unit_price_cents', type: 'integer'),
+            new OA\Property(property: 'quantity', type: 'integer'),
+            new OA\Property(property: 'line_total_cents', type: 'integer'),
+        ], type: 'object')),
+        new OA\Property(property: 'status_history', type: 'array', items: new OA\Items(properties: [
+            new OA\Property(property: 'status', type: 'string'),
+            new OA\Property(property: 'caused_by', type: 'string'),
+            new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
+        ], type: 'object')),
+        new OA\Property(property: 'created_at', type: 'string', format: 'date-time'),
+        new OA\Property(property: 'updated_at', type: 'string', format: 'date-time'),
+    ],
+)]
 class OrderResource extends JsonResource
 {
     /**
