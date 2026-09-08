@@ -8,9 +8,11 @@ use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\ProductImageController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\MetricsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
+Route::get('/metrics', MetricsController::class);
 
 Route::prefix('v1')->group(function () {
     // Throttled: these are the only two unauthenticated endpoints that do
