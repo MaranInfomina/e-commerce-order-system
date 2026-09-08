@@ -286,6 +286,29 @@ services:
       php-fpm:
         condition: service_started
 
+  loki:
+    image: grafana/loki:3.0.0
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./infra/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - lokidata:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./infra/promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+
   nuxt:
     build:
       context: ./src/frontend
@@ -302,6 +325,7 @@ volumes:
   garagemeta:
   garagedata:
   rabbitmqdata:
+  lokidata:
   backend_vendor:
   backend_storage_framework:
   backend_bootstrap_cache:
