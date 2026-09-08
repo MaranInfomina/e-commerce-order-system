@@ -54,20 +54,48 @@ fi
 echo "==> Installing backend dependencies"
 docker compose run --rm php-fpm composer install --no-interaction
 
+# Vault (Milestone 4, optional). Both VAULT_ADDR and VAULT_DEV_ROOT_TOKEN_ID
+# are read from the shell environment (export them before running this
+# script, as the README does), not parsed out of .env -- this script never
+# sources .env. Every Vault read/seed below fails soft: an unset VAULT_ADDR,
+# an unreachable Vault, a wrong token, or a malformed response all fall
+# through to the existing generate-and-write behaviour, so the clean-clone
+# guarantee (NFR-25) holds with VAULT_ADDR unset.
+vault_token="${VAULT_DEV_ROOT_TOKEN_ID:-coe-dev-root-token}"
+
 if ! grep -qE '^APP_KEY=base64:' .env; then
-  echo "==> Generating APP_KEY"
-  # Extract ONLY the key. `docker compose run` executes Task 17's entrypoint first,
-  # and anything it prints lands in this command substitution too. The entrypoint
-  # logs to stderr precisely so this stays clean -- but do not rely on that alone:
-  # grep the one line that actually is a key. Piping the whole output through a
-  # newline-stripping tr instead concatenates every log line into the value, which
-  # has already corrupted a .env once on this project.
-  key="$(docker compose run --rm -T php-fpm \
-    php artisan key:generate --show | tr -d '\r' | grep -oE '^base64:[A-Za-z0-9+/=]+$' | head -n 1)"
-  if [ -z "${key}" ]; then
-    echo "ERROR: could not extract an APP_KEY from key:generate output" >&2
-    exit 1
+  key=""
+
+  if [ -n "${VAULT_ADDR:-}" ]; then
+    echo "==> Checking Vault for an existing APP_KEY"
+    key="$(curl -s -H "X-Vault-Token: ${vault_token}" \
+      "${VAULT_ADDR}/v1/secret/data/coe-orders" \
+      | grep -oE '"APP_KEY":"base64:[A-Za-z0-9+/=]+"' | grep -oE 'base64:[A-Za-z0-9+/=]+' || true)"
   fi
+
+  if [ -z "$key" ]; then
+    echo "==> Generating APP_KEY"
+    # Extract ONLY the key. `docker compose run` executes Task 17's entrypoint first,
+    # and anything it prints lands in this command substitution too. The entrypoint
+    # logs to stderr precisely so this stays clean -- but do not rely on that alone:
+    # grep the one line that actually is a key. Piping the whole output through a
+    # newline-stripping tr instead concatenates every log line into the value, which
+    # has already corrupted a .env once on this project.
+    key="$(docker compose run --rm -T php-fpm \
+      php artisan key:generate --show | tr -d '\r' | grep -oE '^base64:[A-Za-z0-9+/=]+$' | head -n 1)"
+    if [ -z "${key}" ]; then
+      echo "ERROR: could not extract an APP_KEY from key:generate output" >&2
+      exit 1
+    fi
+
+    if [ -n "${VAULT_ADDR:-}" ]; then
+      echo "==> Seeding APP_KEY into Vault"
+      curl -s -X POST -H "X-Vault-Token: ${vault_token}" \
+        -d "{\"data\":{\"APP_KEY\":\"${key}\"}}" \
+        "${VAULT_ADDR}/v1/secret/data/coe-orders" >/dev/null || true
+    fi
+  fi
+
   sed -i.bak "s|^APP_KEY=.*|APP_KEY=${key}|" .env
   rm -f .env.bak
   # sed silently no-ops (exit 0) if .env has no APP_KEY= line to match at all --
@@ -78,16 +106,34 @@ if ! grep -qE '^APP_KEY=base64:' .env; then
 fi
 
 if ! grep -qE '^JWT_SECRET=.+' .env; then
-  echo "==> Generating JWT_SECRET"
-  # Generated locally rather than through `docker compose run`, which would
-  # execute the entrypoint and mix its output into the value — the trap that
-  # corrupted APP_KEY on this project once already.
-  secret="$(docker compose run --rm -T --entrypoint php php-fpm \
-    -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+  secret=""
 
-  if [ -z "${secret}" ]; then
-    echo "ERROR: could not generate a JWT_SECRET" >&2
-    exit 1
+  if [ -n "${VAULT_ADDR:-}" ]; then
+    echo "==> Checking Vault for an existing JWT_SECRET"
+    secret="$(curl -s -H "X-Vault-Token: ${vault_token}" \
+      "${VAULT_ADDR}/v1/secret/data/coe-orders" \
+      | grep -oE '"JWT_SECRET":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
+  fi
+
+  if [ -z "$secret" ]; then
+    echo "==> Generating JWT_SECRET"
+    # Generated locally rather than through `docker compose run`, which would
+    # execute the entrypoint and mix its output into the value — the trap that
+    # corrupted APP_KEY on this project once already.
+    secret="$(docker compose run --rm -T --entrypoint php php-fpm \
+      -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+
+    if [ -z "${secret}" ]; then
+      echo "ERROR: could not generate a JWT_SECRET" >&2
+      exit 1
+    fi
+
+    if [ -n "${VAULT_ADDR:-}" ]; then
+      echo "==> Seeding JWT_SECRET into Vault"
+      curl -s -X POST -H "X-Vault-Token: ${vault_token}" \
+        -d "{\"data\":{\"JWT_SECRET\":\"${secret}\"}}" \
+        "${VAULT_ADDR}/v1/secret/data/coe-orders" >/dev/null || true
+    fi
   fi
 
   sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${secret}|" .env
@@ -98,17 +144,35 @@ if ! grep -qE '^JWT_SECRET=.+' .env; then
 fi
 
 if ! grep -qE '^GARAGE_RPC_SECRET=.+' .env; then
-  echo "==> Generating GARAGE_RPC_SECRET"
-  # docker-compose.yml carries a published throwaway default so a clean clone
-  # boots (CR-3). Anyone who can reach Garage's RPC port authenticates with
-  # it, so every real environment must replace it — including this developer
-  # machine, which is what this block is for.
-  rpc="$(docker compose run --rm -T --entrypoint php php-fpm \
-    -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+  rpc=""
 
-  if [ -z "${rpc}" ]; then
-    echo "ERROR: could not generate a GARAGE_RPC_SECRET" >&2
-    exit 1
+  if [ -n "${VAULT_ADDR:-}" ]; then
+    echo "==> Checking Vault for an existing GARAGE_RPC_SECRET"
+    rpc="$(curl -s -H "X-Vault-Token: ${vault_token}" \
+      "${VAULT_ADDR}/v1/secret/data/coe-orders" \
+      | grep -oE '"GARAGE_RPC_SECRET":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' || true)"
+  fi
+
+  if [ -z "$rpc" ]; then
+    echo "==> Generating GARAGE_RPC_SECRET"
+    # docker-compose.yml carries a published throwaway default so a clean clone
+    # boots (CR-3). Anyone who can reach Garage's RPC port authenticates with
+    # it, so every real environment must replace it — including this developer
+    # machine, which is what this block is for.
+    rpc="$(docker compose run --rm -T --entrypoint php php-fpm \
+      -r 'echo bin2hex(random_bytes(32));' | tr -d '\r' | grep -oE '^[0-9a-f]{64}$' | head -n 1)"
+
+    if [ -z "${rpc}" ]; then
+      echo "ERROR: could not generate a GARAGE_RPC_SECRET" >&2
+      exit 1
+    fi
+
+    if [ -n "${VAULT_ADDR:-}" ]; then
+      echo "==> Seeding GARAGE_RPC_SECRET into Vault"
+      curl -s -X POST -H "X-Vault-Token: ${vault_token}" \
+        -d "{\"data\":{\"GARAGE_RPC_SECRET\":\"${rpc}\"}}" \
+        "${VAULT_ADDR}/v1/secret/data/coe-orders" >/dev/null || true
+    fi
   fi
 
   sed -i.bak "s|^GARAGE_RPC_SECRET=.*|GARAGE_RPC_SECRET=${rpc}|" .env
@@ -179,17 +243,44 @@ fi
 # harder than absent ones: uploads 403, and StorageConnectivityTest FAILS
 # rather than skipping, because credentials are present, just wrong.
 if [ "$key_created" = 1 ] || ! grep -qE '^AWS_ACCESS_KEY_ID=.+' .env; then
-  key_info="$(docker compose exec -T garage /garage key info coe-app --show-secret)"
-  key_id="$(echo "$key_info" | grep -oE 'GK[0-9a-f]{20,}' | head -n 1)"
-  # Strip the key-id line before hunting for the secret: `key info` also
-  # prints authorized-bucket ids, which are also 64 hex, and whichever run
-  # appears first would otherwise land a bucket id in AWS_SECRET_ACCESS_KEY —
-  # a 403 that reads like a configuration bug.
-  key_secret="$(echo "$key_info" | grep -v 'GK[0-9a-f]' | grep -oE '[0-9a-f]{64}' | head -n 1)"
+  key_id=""
+  key_secret=""
+
+  # Skip the Vault lookup entirely when key_created=1: Garage just minted a
+  # brand new key (e.g. after `docker compose down -v` wiped its metadata
+  # volume), so anything cached in Vault from a previous Garage instance is
+  # now stale and would 403 -- the comment above this block makes the same
+  # point about a bare .env check. Only consult Vault for the other case,
+  # where Garage's existing key is still valid but .env simply hasn't been
+  # written yet.
+  if [ "$key_created" != 1 ] && [ -n "${VAULT_ADDR:-}" ]; then
+    echo "==> Checking Vault for existing AWS credentials"
+    vault_resp="$(curl -s -H "X-Vault-Token: ${vault_token}" \
+      "${VAULT_ADDR}/v1/secret/data/coe-orders" || true)"
+    key_id="$(echo "$vault_resp" | grep -oE '"AWS_ACCESS_KEY_ID":"GK[0-9a-f]{20,}"' | grep -oE 'GK[0-9a-f]{20,}' | head -n 1 || true)"
+    key_secret="$(echo "$vault_resp" | grep -oE '"AWS_SECRET_ACCESS_KEY":"[0-9a-f]{64}"' | grep -oE '[0-9a-f]{64}' | head -n 1 || true)"
+  fi
 
   if [ -z "$key_id" ] || [ -z "$key_secret" ]; then
-    echo "ERROR: could not read Garage credentials" >&2
-    exit 1
+    key_info="$(docker compose exec -T garage /garage key info coe-app --show-secret)"
+    key_id="$(echo "$key_info" | grep -oE 'GK[0-9a-f]{20,}' | head -n 1)"
+    # Strip the key-id line before hunting for the secret: `key info` also
+    # prints authorized-bucket ids, which are also 64 hex, and whichever run
+    # appears first would otherwise land a bucket id in AWS_SECRET_ACCESS_KEY —
+    # a 403 that reads like a configuration bug.
+    key_secret="$(echo "$key_info" | grep -v 'GK[0-9a-f]' | grep -oE '[0-9a-f]{64}' | head -n 1)"
+
+    if [ -z "$key_id" ] || [ -z "$key_secret" ]; then
+      echo "ERROR: could not read Garage credentials" >&2
+      exit 1
+    fi
+
+    if [ -n "${VAULT_ADDR:-}" ]; then
+      echo "==> Seeding AWS credentials into Vault"
+      curl -s -X POST -H "X-Vault-Token: ${vault_token}" \
+        -d "{\"data\":{\"AWS_ACCESS_KEY_ID\":\"${key_id}\",\"AWS_SECRET_ACCESS_KEY\":\"${key_secret}\"}}" \
+        "${VAULT_ADDR}/v1/secret/data/coe-orders" >/dev/null || true
+    fi
   fi
 
   sed -i.bak "s|^AWS_ACCESS_KEY_ID=.*|AWS_ACCESS_KEY_ID=${key_id}|" .env

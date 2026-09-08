@@ -286,6 +286,20 @@ services:
       php-fpm:
         condition: service_started
 
+  vault:
+    image: hashicorp/vault:1.17
+    ports:
+      - "127.0.0.1:8200:8200"
+    cap_add:
+      - IPC_LOCK
+    environment:
+      # Dev mode: in-memory storage, auto-unsealed, a fixed root token —
+      # explicitly dev-grade only, matching this project's existing
+      # treatment of Garage's RPC secret default and the self-signed TLS
+      # cert (a separate task) as training-only concerns.
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-coe-dev-root-token}
+      VAULT_ADDR: http://127.0.0.1:8200
+
   nuxt:
     build:
       context: ./src/frontend

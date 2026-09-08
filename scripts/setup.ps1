@@ -63,13 +63,67 @@ Write-Host '==> Installing backend dependencies'
 docker compose run --rm php-fpm composer install --no-interaction
 if ($LASTEXITCODE -ne 0) { throw 'composer install failed' }
 
+# Vault (Milestone 4, optional). Both $env:VAULT_ADDR and
+# $env:VAULT_DEV_ROOT_TOKEN_ID come from the shell environment (export them
+# before running this script), not parsed out of .env -- this script never
+# sources .env. Every Vault read/seed below fails soft: an unset VAULT_ADDR,
+# an unreachable Vault, a wrong token, or a malformed response all fall
+# through to the existing generate-and-write behaviour, so the clean-clone
+# guarantee (NFR-25) holds with VAULT_ADDR unset. Invoke-RestMethod under
+# $ErrorActionPreference = 'Stop' throws on a non-2xx response (an unreachable
+# Vault, a 403 from a bad token, a 404 for a secret that was never seeded) --
+# every call is wrapped in try/catch so that throw never escapes this script.
+$vaultToken = if ($env:VAULT_DEV_ROOT_TOKEN_ID) { $env:VAULT_DEV_ROOT_TOKEN_ID } else { 'coe-dev-root-token' }
+
+function Get-VaultSecret {
+    if (-not $env:VAULT_ADDR) { return $null }
+    try {
+        $resp = Invoke-RestMethod -Method Get -Uri "$($env:VAULT_ADDR)/v1/secret/data/coe-orders" `
+            -Headers @{ 'X-Vault-Token' = $vaultToken } -ErrorAction Stop
+        return $resp.data.data
+    } catch {
+        return $null
+    }
+}
+
+function Set-VaultSecret {
+    param([hashtable]$Data)
+    if (-not $env:VAULT_ADDR) { return }
+    try {
+        $body = @{ data = $Data } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Method Post -Uri "$($env:VAULT_ADDR)/v1/secret/data/coe-orders" `
+            -Headers @{ 'X-Vault-Token' = $vaultToken } -Body $body -ContentType 'application/json' `
+            -ErrorAction Stop | Out-Null
+    } catch {
+        # Seeding is best-effort -- a failure here must not block the rest of
+        # setup, matching the `|| true` on the bash twin's curl seed calls.
+    }
+}
+
 $envContent = Get-Content .env -Raw
 if ($envContent -notmatch '(?m)^APP_KEY=base64:') {
-    Write-Host '==> Generating APP_KEY'
-    # Extract ONLY the key -- the entrypoint runs first and its output lands here too.
-    $key = (docker compose run --rm -T php-fpm php artisan key:generate --show) |
-        Where-Object { $_ -match '^base64:[A-Za-z0-9+/=]+$' } | Select-Object -First 1
-    if (-not $key) { throw 'could not extract an APP_KEY from key:generate output' }
+    $key = $null
+
+    if ($env:VAULT_ADDR) {
+        Write-Host '==> Checking Vault for an existing APP_KEY'
+        $vaultData = Get-VaultSecret
+        if ($vaultData -and $vaultData.APP_KEY -match '^base64:[A-Za-z0-9+/=]+$') {
+            $key = $vaultData.APP_KEY
+        }
+    }
+
+    if (-not $key) {
+        Write-Host '==> Generating APP_KEY'
+        # Extract ONLY the key -- the entrypoint runs first and its output lands here too.
+        $key = (docker compose run --rm -T php-fpm php artisan key:generate --show) |
+            Where-Object { $_ -match '^base64:[A-Za-z0-9+/=]+$' } | Select-Object -First 1
+        if (-not $key) { throw 'could not extract an APP_KEY from key:generate output' }
+
+        if ($env:VAULT_ADDR) {
+            Write-Host '==> Seeding APP_KEY into Vault'
+            Set-VaultSecret -Data @{ APP_KEY = $key }
+        }
+    }
 
     # [^\r\n]* (not .*) so a CRLF .env keeps its trailing `\r` on this line instead
     # of the substitution swallowing it and leaving this one line LF while its
@@ -92,10 +146,27 @@ if ($envContent -notmatch '(?m)^APP_KEY=base64:') {
 
 $envContent = Get-Content .env -Raw
 if ($envContent -notmatch '(?m)^JWT_SECRET=.+') {
-    Write-Host '==> Generating JWT_SECRET'
-    $secret = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
-        Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
-    if (-not $secret) { throw 'could not generate a JWT_SECRET' }
+    $secret = $null
+
+    if ($env:VAULT_ADDR) {
+        Write-Host '==> Checking Vault for an existing JWT_SECRET'
+        $vaultData = Get-VaultSecret
+        if ($vaultData -and $vaultData.JWT_SECRET -match '^[0-9a-f]{64}$') {
+            $secret = $vaultData.JWT_SECRET
+        }
+    }
+
+    if (-not $secret) {
+        Write-Host '==> Generating JWT_SECRET'
+        $secret = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
+            Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
+        if (-not $secret) { throw 'could not generate a JWT_SECRET' }
+
+        if ($env:VAULT_ADDR) {
+            Write-Host '==> Seeding JWT_SECRET into Vault'
+            Set-VaultSecret -Data @{ JWT_SECRET = $secret }
+        }
+    }
 
     $envContent = Get-Content .env -Raw
     $updated = $envContent -replace '(?m)^JWT_SECRET=[^\r\n]*', "JWT_SECRET=$secret"
@@ -108,10 +179,27 @@ if ($envContent -notmatch '(?m)^JWT_SECRET=.+') {
 
 $envContent = Get-Content .env -Raw
 if ($envContent -notmatch '(?m)^GARAGE_RPC_SECRET=.+') {
-    Write-Host '==> Generating GARAGE_RPC_SECRET'
-    $rpc = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
-        ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
-    if (-not $rpc) { throw 'could not generate a GARAGE_RPC_SECRET' }
+    $rpc = $null
+
+    if ($env:VAULT_ADDR) {
+        Write-Host '==> Checking Vault for an existing GARAGE_RPC_SECRET'
+        $vaultData = Get-VaultSecret
+        if ($vaultData -and $vaultData.GARAGE_RPC_SECRET -match '^[0-9a-f]{64}$') {
+            $rpc = $vaultData.GARAGE_RPC_SECRET
+        }
+    }
+
+    if (-not $rpc) {
+        Write-Host '==> Generating GARAGE_RPC_SECRET'
+        $rpc = (docker compose run --rm -T --entrypoint php php-fpm -r 'echo bin2hex(random_bytes(32));') |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9a-f]{64}$' } | Select-Object -First 1
+        if (-not $rpc) { throw 'could not generate a GARAGE_RPC_SECRET' }
+
+        if ($env:VAULT_ADDR) {
+            Write-Host '==> Seeding GARAGE_RPC_SECRET into Vault'
+            Set-VaultSecret -Data @{ GARAGE_RPC_SECRET = $rpc }
+        }
+    }
 
     $envContent = Get-Content .env -Raw
     $updated = $envContent -replace '(?m)^GARAGE_RPC_SECRET=[^\r\n]*', "GARAGE_RPC_SECRET=$rpc"
@@ -169,10 +257,35 @@ if ($bucketInfoExit -ne 0) {
 # worse than no key at all.
 $envContent = Get-Content .env -Raw
 if ($keyCreated -or ($envContent -notmatch '(?m)^AWS_ACCESS_KEY_ID=.+')) {
-    $info      = (docker compose exec -T garage /garage key info coe-app --show-secret) -join "`n"
-    $keyId     = [regex]::Match($info, 'GK[0-9a-f]{20,}').Value
-    $keySecret = [regex]::Match(($info -split "`n" | Where-Object { $_ -notmatch 'GK[0-9a-f]' }) -join "`n", '[0-9a-f]{64}').Value
-    if (-not $keyId -or -not $keySecret) { throw 'could not read Garage credentials' }
+    $keyId = $null
+    $keySecret = $null
+
+    # Skip the Vault lookup entirely when $keyCreated: Garage just minted a
+    # brand new key (e.g. after a volume wipe), so anything cached in Vault
+    # from a previous Garage instance is stale and would 403 -- same
+    # reasoning as the comment above this block. Only consult Vault when
+    # Garage's existing key is still valid but .env simply hasn't been
+    # written yet.
+    if (-not $keyCreated -and $env:VAULT_ADDR) {
+        Write-Host '==> Checking Vault for existing AWS credentials'
+        $vaultData = Get-VaultSecret
+        if ($vaultData -and $vaultData.AWS_ACCESS_KEY_ID -match '^GK[0-9a-f]{20,}$' -and $vaultData.AWS_SECRET_ACCESS_KEY -match '^[0-9a-f]{64}$') {
+            $keyId = $vaultData.AWS_ACCESS_KEY_ID
+            $keySecret = $vaultData.AWS_SECRET_ACCESS_KEY
+        }
+    }
+
+    if (-not $keyId -or -not $keySecret) {
+        $info      = (docker compose exec -T garage /garage key info coe-app --show-secret) -join "`n"
+        $keyId     = [regex]::Match($info, 'GK[0-9a-f]{20,}').Value
+        $keySecret = [regex]::Match(($info -split "`n" | Where-Object { $_ -notmatch 'GK[0-9a-f]' }) -join "`n", '[0-9a-f]{64}').Value
+        if (-not $keyId -or -not $keySecret) { throw 'could not read Garage credentials' }
+
+        if ($env:VAULT_ADDR) {
+            Write-Host '==> Seeding AWS credentials into Vault'
+            Set-VaultSecret -Data @{ AWS_ACCESS_KEY_ID = $keyId; AWS_SECRET_ACCESS_KEY = $keySecret }
+        }
+    }
 
     $updated = $envContent -replace '(?m)^AWS_ACCESS_KEY_ID=[^\r\n]*',     "AWS_ACCESS_KEY_ID=$keyId"
     $updated = $updated    -replace '(?m)^AWS_SECRET_ACCESS_KEY=[^\r\n]*', "AWS_SECRET_ACCESS_KEY=$keySecret"
