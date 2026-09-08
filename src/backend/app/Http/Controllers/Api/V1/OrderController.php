@@ -56,11 +56,20 @@ class OrderController extends Controller
         // dispatching a second job chain or clearing an already-empty cart on
         // a replay would be a silent duplicate side effect.
         if ($order->wasRecentlyCreated) {
+            // Laravel's queue system does not carry trace context into a
+            // serialized job payload on its own: without this, the
+            // ProcessPayment/SendOrderConfirmation spans below would start a
+            // brand-new trace instead of continuing this request's, and
+            // Jaeger would show two disconnected traces for one checkout.
+            $traceContext = \App\Http\Middleware\TraceRequests::currentContext();
+
+            $processPayment = new ProcessPayment($order->id);
+            $sendOrderConfirmation = new SendOrderConfirmation($order->id);
+            $processPayment->traceContext = $traceContext;
+            $sendOrderConfirmation->traceContext = $traceContext;
+
             try {
-                Bus::chain([
-                    new ProcessPayment($order->id),
-                    new SendOrderConfirmation($order->id),
-                ])->onQueue('orders')->dispatch();
+                Bus::chain([$processPayment, $sendOrderConfirmation])->onQueue('orders')->dispatch();
             } catch (Throwable $e) {
                 // Under QUEUE_CONNECTION=sync (forced by phpunit.xml under the
                 // test suite), dispatch() runs the chain's first job INLINE,

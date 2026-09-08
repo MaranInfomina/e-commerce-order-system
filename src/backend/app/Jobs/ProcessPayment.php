@@ -20,6 +20,9 @@ class ProcessPayment implements ShouldQueue
 
     public int $backoff = 10;
 
+    /** @var array<string, string> */
+    public array $traceContext = [];
+
     // The order id, not the Order model: keeps the queued payload tiny and
     // makes every attempt re-read current data rather than a stale snapshot
     // serialized at dispatch time.
@@ -27,16 +30,29 @@ class ProcessPayment implements ShouldQueue
 
     public function handle(OrderStatusTransitioner $transitioner): void
     {
-        $order = Order::findOrFail($this->orderId);
+        $parentContext = \OpenTelemetry\API\Trace\Propagation\TraceContextPropagator::getInstance()
+            ->extract($this->traceContext);
 
-        // A literal marker in the address a reviewer can trigger on demand,
-        // chosen over a random or numeric trigger specifically because it
-        // cannot be hit by accident in ordinary fixture data.
-        if (str_contains($order->shipping_address, 'FAIL_PAYMENT')) {
-            throw new RuntimeException("Mock payment failed for order {$order->id} (FAIL_PAYMENT marker present).");
+        $span = \App\Http\Middleware\TraceRequests::tracerProvider()
+            ->getTracer('coe-backend')
+            ->spanBuilder('job.'.class_basename(static::class))
+            ->setParent($parentContext)
+            ->startSpan();
+
+        try {
+            $order = Order::findOrFail($this->orderId);
+
+            // A literal marker in the address a reviewer can trigger on demand,
+            // chosen over a random or numeric trigger specifically because it
+            // cannot be hit by accident in ordinary fixture data.
+            if (str_contains($order->shipping_address, 'FAIL_PAYMENT')) {
+                throw new RuntimeException("Mock payment failed for order {$order->id} (FAIL_PAYMENT marker present).");
+            }
+
+            $transitioner->transition($order, Order::STATUS_PENDING, Order::STATUS_PAID, 'system');
+        } finally {
+            $span->end();
         }
-
-        $transitioner->transition($order, Order::STATUS_PENDING, Order::STATUS_PAID, 'system');
     }
 
     /**
