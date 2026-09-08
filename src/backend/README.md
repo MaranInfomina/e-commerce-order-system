@@ -25,6 +25,28 @@ All paths below are relative to `src/backend/`:
 | `app/Http/Resources/` | Response serialization |
 | `app/Models/` | Eloquent models |
 
+## Observability and docs routes
+
+`GET /api/metrics` (Prometheus text format) and `GET /docs`/`GET /api-docs`
+(Swagger UI and its raw OpenAPI spec) are registered outside the `v1` route
+group in `routes/api.php`. `/api/metrics` still falls under Laravel's
+`apiPrefix` (`config/app.php` bootstrap default is `'api'`, so an unprefixed
+`Route::get('/metrics', ...)` still resolves to `/api/metrics` — the same
+reason `/api/health` isn't bare `/health`), but the Swagger UI's own service
+provider registers `/docs`/`/api-docs` directly on the router, bypassing that
+prefix entirely, which is why those two are bare.
+
+`app/Http/Middleware/RecordHttpMetrics.php` (records the Prometheus
+counters/histograms `MetricsController` renders) and
+`app/Http/Middleware/TraceRequests.php` (opens the OpenTelemetry span every
+request runs inside, and captures the W3C `traceparent` carrier
+`OrderController::store()` attaches to `ProcessPayment`/`SendOrderConfirmation`
+before dispatch) are both registered in `bootstrap/app.php`'s global
+middleware stack (`$middleware->append(...)`), not scoped to any route group
+— every request, including `/docs` and `/up`, passes through both. A reader
+debugging unexpected request timing or an unfamiliar Redis/OTLP call during
+a request should look here first.
+
 ## Configuration
 
 Config comes from container environment variables injected by Compose from the

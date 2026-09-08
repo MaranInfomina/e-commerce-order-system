@@ -13,6 +13,11 @@ services:
       AUTO_MIGRATE: "false"
       AUTO_SEED: "false"
       # Auto-migrate and auto-seed stay off in production (Milestone 1).
+      # Regenerating the OpenAPI spec on every request to /api-docs is a dev
+      # convenience (Milestone 4) — needless work per request in production,
+      # where the spec only changes on a deploy. Run
+      # `artisan l5-swagger:generate` as part of a real deploy step instead.
+      L5_SWAGGER_GENERATE_ALWAYS: "false"
       SESSION_DRIVER: redis
       SESSION_CONNECTION: session
       CACHE_STORE: redis

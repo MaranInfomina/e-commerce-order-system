@@ -45,13 +45,23 @@ output:
 | `garage` | Garage v1, S3-compatible object storage for product images | internal only |
 | `rabbitmq` | RabbitMQ 4, management image. Async order-processing queue | management UI at `localhost:15672` (guest/guest) |
 | `mailpit` | Dev-only SMTP catcher for order-confirmation emails | web UI at `localhost:8025` |
+| `loki` | Log aggregation. Ingests every container's stdout/stderr, discovered automatically over the Docker socket | internal only |
+| `promtail` | Ships container logs to `loki` | publishes no port |
+| `prometheus` | Scrapes `GET /api/metrics` and stores time-series metrics | internal only |
+| `grafana` | Dashboards over Prometheus (metrics) and Loki (logs), provisioned from files — no manual UI setup | `localhost:3001` |
+| `jaeger` | Collects and displays distributed traces (OTLP) | UI at `localhost:16686` |
+| `vault` | HashiCorp Vault, dev mode. Optional secrets source for `setup.sh`/`setup.ps1` | UI/API at `localhost:8200` |
 
 A seventh process, `queue-worker`, runs the same image as `php-fpm` with a
 different command (`php artisan queue:work rabbitmq --queue=orders`) — it
 consumes the payment/confirmation job chain and the automatic
 shipped/delivered progression. It publishes no port.
 
-Only nginx publishes a port, so the whole app is one origin and needs no CORS.
+Only nginx publishes a port for the application itself (both `:8080` plain
+HTTP, which redirects, and `:8443` HTTPS), so the app remains one origin and
+needs no CORS. The observability and secrets UIs above (`grafana`, `jaeger`,
+`vault`, plus `rabbitmq`/`mailpit` already listed) are separate, directly
+published ports — dev/demo conveniences, not part of the app's own origin.
 
 ## Compose files
 
@@ -99,6 +109,9 @@ limitations and gotchas."
 | GET | `/api/v1/orders/{id}` | One order's detail (own order, or admin) | Authenticated |
 | PATCH | `/api/v1/orders/{id}/status` | Advance an order to `shipped` or `delivered` | Admin |
 | GET | `/api/v1/reports/sales` | Sales summary and per-day breakdown | Admin |
+| GET | `/api/metrics` | Prometheus scrape target (text format) | None (not versioned) |
+| GET | `/docs` | Swagger UI, rendering the OpenAPI spec | None (not versioned) |
+| GET | `/api-docs` | Raw generated OpenAPI spec (JSON), fetched by `/docs` | None (not versioned) |
 
 `sort` accepts `name`, `-name`, `price`, `-price`, `created_at`, `-created_at`.
 A leading `-` means descending. An unrecognized value is rejected with 422
@@ -123,7 +136,7 @@ envelope. `details` is only present on validation failures (422):
 | `INTERNAL_ERROR` | 500 | Anything else — the message never discloses internal detail |
 | `UNAUTHENTICATED` | 401 | No token, or the token does not verify (missing, malformed, expired, wrong signature, or revoked) |
 | `FORBIDDEN` | 403 | A verified token belonging to a `customer` hit an admin-only endpoint |
-| `TOO_MANY_REQUESTS` | 429 | `POST /api/v1/auth/register` or `POST /api/v1/auth/login` exceeded 5 requests/minute for that IP on that endpoint |
+| `TOO_MANY_REQUESTS` | 429 | `POST /api/v1/auth/register` or `POST /api/v1/auth/login` exceeded 5 requests/minute for that IP on that endpoint, or `POST /api/v1/orders` exceeded 20 requests/minute for that authenticated user |
 
 Prices are integer **cents** in `price_cents`, everywhere. No floats touch money.
 
@@ -184,6 +197,51 @@ Repeating a checkout `POST` with the same `Idempotency-Key` header for the
 same user returns the original order (`200`, not `201`) instead of creating
 a duplicate; the key is scoped per user at the database level via a
 `(user_id, idempotency_key)` unique index.
+
+## CI, observability, and security
+
+**CI.** `.github/workflows/ci.yml` path-filters on every push/PR: a change
+under `src/backend/` runs only the backend job (Pest), a change under
+`src/frontend/` runs only the frontend job (Vitest), and a change to either
+Dockerfile or any root `docker-compose*.yml` runs **both** — so a shared
+infra change can never silently skip validation of one side. Both jobs also
+build their Docker image, proving it still builds; there is no deploy step,
+since this project has no real target environment to deploy to.
+
+**Logs, metrics, and traces need zero application code changes to keep
+working.** `promtail` discovers every container's stdout/stderr
+automatically over the Docker socket and ships it to `loki`; adding a new
+service to `docker-compose.yml` gets its logs collected for free. Metrics
+(`RecordHttpMetrics` middleware) and traces (`TraceRequests` middleware) are
+already wired into the global middleware stack — a new route or job doesn't
+need to opt in.
+
+**Checkout is rate-limited per authenticated user, not per IP.** Unlike
+`register`/`login` (5/min/IP, since there's no user yet to key on),
+`POST /api/v1/orders` allows 20/min per user — the one endpoint beyond auth
+that spends real, mutating resources (stock decrement, a dispatched job
+chain) per request.
+
+**HTTPS is self-signed and dev-only.** `nginx` terminates TLS on
+`APP_HTTPS_PORT` (default `8443`) using a certificate `setup.sh`/`setup.ps1`
+generates into `infra/nginx/certs/` (gitignored) if absent; plain HTTP on
+`APP_PORT` always redirects to it. Browsers and `curl` will flag the
+certificate as untrusted (`curl -k` to bypass) — this is expected for a
+training project and not something to fix by, say, obtaining a real
+certificate for `localhost`.
+
+**Vault is optional.** `VAULT_ADDR` empty (the default) means secrets are
+generated exactly as they were in Milestones 1–3: `setup.sh`/`setup.ps1`
+writes a stable `APP_KEY`/`JWT_SECRET`/`GARAGE_RPC_SECRET`/`AWS_*` into
+`.env` on first run, unchanged. Setting `VAULT_ADDR` (and
+`VAULT_DEV_ROOT_TOKEN_ID`) makes the same setup script check Vault's KV v2
+API first for each secret, seeding Vault with the generated value the first
+time and reusing it on every subsequent run, before falling back to
+generating a fresh one if Vault is unreachable. Either way, the resolution
+happens once in the setup script — never in `docker-entrypoint.sh` — because
+`DB_PASSWORD`/`AWS_*`/`GARAGE_RPC_SECRET` are consumed directly by sibling
+containers (`postgres`, `garage`) that never run that script, and Compose
+resolves every `.env` variable before any container starts.
 
 ## Common commands
 
