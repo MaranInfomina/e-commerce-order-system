@@ -82,6 +82,21 @@ services:
       MAIL_PORT: ${MAIL_PORT:-1025}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-orders@coe.local}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-COE Order System}
+      # OTLP over plain HTTP (port 4318), not gRPC (4317): ext-grpc is not
+      # installed in this image, and open-telemetry/exporter-otlp's bundled
+      # OtlpHttpTransportFactory works over a PSR-18 client (Guzzle, already
+      # a Laravel dependency) with no extra PHP extension required.
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-coe-backend}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      # The SDK's default BatchSpanProcessor exports on a scheduled delay
+      # (5s) driven by a background fiber — a model built for a long-running
+      # process, not a php-fpm worker that tears down at the end of every
+      # request. Left on the default, a span could simply never be flushed
+      # before the process recycles. SimpleSpanProcessor exports
+      # synchronously the moment a span ends, which is the correct trade-off
+      # here: one extra blocking HTTP call per traced request/job, in
+      # exchange for a trace that reliably reaches Jaeger at all.
+      OTEL_PHP_TRACES_PROCESSOR: ${OTEL_PHP_TRACES_PROCESSOR:-simple}
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
       AUTO_SEED: ${AUTO_SEED:-true}
     volumes:
@@ -98,6 +113,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      jaeger:
+        condition: service_started
 
   postgres:
     image: postgres:16-alpine
@@ -250,6 +267,13 @@ services:
       MAIL_PORT: ${MAIL_PORT:-1025}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-orders@coe.local}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-COE Order System}
+      # Same reasoning as php-fpm's identical pair above: HTTP transport
+      # (4318), not gRPC, and the same OTEL_SERVICE_NAME so both containers'
+      # spans land on the same Jaeger service and can be joined into one trace.
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-coe-backend}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+      # Same reasoning as php-fpm's identical setting above.
+      OTEL_PHP_TRACES_PROCESSOR: ${OTEL_PHP_TRACES_PROCESSOR:-simple}
       # AUTO_MIGRATE/AUTO_SEED default to false here even though the base env
       # var defaults to true: this container shares docker-entrypoint.sh with
       # php-fpm, and running migrate --force from two containers on every
@@ -271,6 +295,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      jaeger:
+        condition: service_started
       # No healthcheck on mailpit (see its service definition above), so this
       # is service_started rather than service_healthy like every other
       # dependency here — the SendOrderConfirmation job (a later task) sends
@@ -343,6 +369,13 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    ports:
+      - "127.0.0.1:16686:16686"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
 
   nuxt:
     build:
