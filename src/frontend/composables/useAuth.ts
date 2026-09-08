@@ -1,4 +1,4 @@
-import { authHeaders, decodeJwtRole, resolveApiBase } from '~/utils/api'
+import { authHeaders, decodeJwtRole, resolveApiBase, type ProfileUpdateInput, type User } from '~/utils/api'
 
 interface LoginResponse {
   token: string
@@ -81,6 +81,24 @@ export function useAuth() {
     toast.success('Account created. Sign in to continue.')
   }
 
+  function getMe() {
+    return $fetch<{ data: User }>(`${base}/auth/me`, {
+      headers: authHeaders(token.value),
+    })
+  }
+
+  async function updateProfile(payload: ProfileUpdateInput): Promise<User> {
+    const response = await $fetch<{ data: User }>(`${base}/auth/me`, {
+      method: 'PATCH',
+      headers: authHeaders(token.value),
+      body: payload,
+    })
+
+    toast.success('Profile updated.')
+
+    return response.data
+  }
+
   async function logout(): Promise<void> {
     if (token.value) {
       try {
@@ -100,5 +118,5 @@ export function useAuth() {
     toast.success('Signed out.')
   }
 
-  return { token, isAuthenticated, isAdmin, login, register, logout }
+  return { token, isAuthenticated, isAdmin, login, register, getMe, updateProfile, logout }
 }

@@ -1,3 +1,19 @@
+export interface User {
+  id: number
+  name: string
+  email: string
+  role: 'customer' | 'admin'
+  created_at: string
+  updated_at: string
+}
+
+export interface ProfileUpdateInput {
+  name?: string
+  email?: string
+  password?: string
+  password_confirmation?: string
+}
+
 export interface Category {
   id: number
   name: string

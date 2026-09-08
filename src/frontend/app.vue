@@ -42,6 +42,12 @@ async function signOut() {
             >
               Your orders
             </NuxtLink>
+            <NuxtLink
+              to="/profile"
+              class="hidden text-sm font-medium text-slate-600 hover:text-indigo-600 sm:block"
+            >
+              Profile
+            </NuxtLink>
           </template>
 
           <button
