@@ -6,6 +6,13 @@ interface LoginResponse {
   expires_in: number
 }
 
+export interface RegisterPayload {
+  name: string
+  email: string
+  password: string
+  password_confirmation: string
+}
+
 export function useAuth() {
   // A cookie, not localStorage: SSR must be able to read the token to
   // render an authenticated page on the server, and localStorage does not
@@ -61,6 +68,19 @@ export function useAuth() {
     toast.success('Signed in.')
   }
 
+  // Registration never returns a token (POST /auth/register always creates a
+  // customer and responds with just the created user - see
+  // AuthController::register), so this only creates the account. The caller
+  // sends the user to /login afterwards.
+  async function register(payload: RegisterPayload): Promise<void> {
+    await $fetch(`${base}/auth/register`, {
+      method: 'POST',
+      body: payload,
+    })
+
+    toast.success('Account created. Sign in to continue.')
+  }
+
   async function logout(): Promise<void> {
     if (token.value) {
       try {
@@ -80,5 +100,5 @@ export function useAuth() {
     toast.success('Signed out.')
   }
 
-  return { token, isAuthenticated, isAdmin, login, logout }
+  return { token, isAuthenticated, isAdmin, login, register, logout }
 }

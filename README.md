@@ -157,6 +157,20 @@ returns a signed JWT (`Bearer <token>`) with a one-hour default lifetime
 (`JWT_TTL`). There is no refresh — once a token expires, the user logs in
 again.
 
+Registration always produces a `customer` — `RegisterRequest` drops any
+submitted `role` before it reaches `User::create()`, so there is no way to
+self-register an admin. The seeded catalog (`DatabaseSeeder`, run
+automatically on first boot) includes one default admin for reaching the
+admin-only screens on a clean clone without a manual `tinker` step:
+
+| Email | Password | Role |
+|---|---|---|
+| `admin@example.com` | `correct-horse-battery` | admin |
+
+The frontend has both `/login` and `/register` pages; `/register` only ever
+creates a customer account and redirects to `/login` on success, matching
+the API.
+
 `POST /api/v1/auth/logout` revokes the caller's token immediately by adding
 its `jti` to a Redis denylist, rather than waiting for it to expire on its
 own. Every authenticated request checks that denylist, so a logged-out

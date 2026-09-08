@@ -1,21 +1,26 @@
 <script setup lang="ts">
 import { parseApiError } from '~/utils/api'
 
-const { login } = useAuth()
+const { register } = useAuth()
 const route = useRoute()
 
-const registerHref = computed(() => {
-  const raw = route.query.redirect
-  return typeof raw === 'string' && raw
-    ? `/register?redirect=${encodeURIComponent(raw)}`
-    : '/register'
-})
-
+const name = ref('')
 const email = ref('')
 const password = ref('')
+const passwordConfirmation = ref('')
 const submitting = ref(false)
 const formError = ref<string | null>(null)
 const fieldErrors = ref<Record<string, string[]>>({})
+
+// Registration never signs the new account in - carry the redirect straight
+// through to /login so a completed sign-in still lands where the visitor was
+// originally headed.
+const loginHref = computed(() => {
+  const raw = route.query.redirect
+  return typeof raw === 'string' && raw
+    ? `/login?redirect=${encodeURIComponent(raw)}`
+    : '/login'
+})
 
 async function submit() {
   if (submitting.value) return
@@ -25,23 +30,14 @@ async function submit() {
   fieldErrors.value = {}
 
   try {
-    await login(email.value, password.value)
+    await register({
+      name: name.value,
+      email: email.value,
+      password: password.value,
+      password_confirmation: passwordConfirmation.value,
+    })
 
-    // Return the user where they were headed, defaulting to the catalog.
-    // Validated: the query string is attacker-controlled. Only a same-origin
-    // absolute path is legal — not an absolute URL, not protocol-relative
-    // `//evil.com`, not the backslash forms `/\evil.com` or `\/evil.com` that
-    // browsers normalise to it, and not a leading whitespace/control
-    // character (`/\t/evil.com`, `/\n/evil.com`) — neither `/` nor `\`, so it
-    // slipped past an earlier version of this guard. navigateTo's own
-    // internal check (ufo's protocol-relative regex, which does include
-    // `\s*`) would have caught it anyway, but only by THROWING — which the
-    // catch below turns into a "FAILED LOGIN" banner after the token has
-    // already been set. This guard must be the one that stops it, not a
-    // transitive dependency's side effect.
-    const raw = route.query.redirect
-    const intended = typeof raw === 'string' && /^\/(?![/\\\s])/.test(raw) ? raw : '/products'
-    await navigateTo(intended)
+    await navigateTo(loginHref.value)
   }
   catch (error) {
     const parsed = parseApiError(error)
@@ -56,7 +52,7 @@ async function submit() {
 
 <template>
   <section class="mx-auto flex max-w-sm flex-col gap-6 py-12">
-    <h1 class="text-center text-2xl font-bold tracking-tight text-slate-900">Sign in</h1>
+    <h1 class="text-center text-2xl font-bold tracking-tight text-slate-900">Create an account</h1>
 
     <div class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
       <p
@@ -68,6 +64,19 @@ async function submit() {
       </p>
 
       <form class="flex flex-col gap-4" @submit.prevent="submit">
+        <label for="name" class="flex flex-col gap-1 text-sm font-medium text-slate-600">
+          Name
+          <input
+            id="name"
+            v-model="name"
+            type="text"
+            data-test="field-name"
+            required
+            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
+          <span v-if="fieldErrors.name" class="text-xs text-red-600">{{ fieldErrors.name[0] }}</span>
+        </label>
+
         <label for="email" class="flex flex-col gap-1 text-sm font-medium text-slate-600">
           Email
           <input
@@ -89,9 +98,23 @@ async function submit() {
             type="password"
             data-test="field-password"
             required
+            minlength="12"
             class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           >
           <span v-if="fieldErrors.password" class="text-xs text-red-600">{{ fieldErrors.password[0] }}</span>
+          <span v-else class="text-xs text-slate-400">At least 12 characters.</span>
+        </label>
+
+        <label for="password_confirmation" class="flex flex-col gap-1 text-sm font-medium text-slate-600">
+          Confirm password
+          <input
+            id="password_confirmation"
+            v-model="passwordConfirmation"
+            type="password"
+            data-test="field-password-confirmation"
+            required
+            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          >
         </label>
 
         <button
@@ -100,14 +123,14 @@ async function submit() {
           data-test="submit"
           class="mt-2 w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {{ submitting ? 'Signing in…' : 'Sign in' }}
+          {{ submitting ? 'Creating account…' : 'Create account' }}
         </button>
       </form>
     </div>
 
     <p class="text-center text-sm text-slate-500">
-      Don't have an account?
-      <NuxtLink :to="registerHref" class="font-medium text-indigo-600 hover:text-indigo-500">Create one</NuxtLink>
+      Already have an account?
+      <NuxtLink :to="loginHref" class="font-medium text-indigo-600 hover:text-indigo-500">Sign in</NuxtLink>
     </p>
   </section>
 </template>
