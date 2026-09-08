@@ -44,5 +44,22 @@ export function useProductsApi() {
     return $fetch<{ data: Category[] }>(`${base}/categories`)
   }
 
-  return { listProducts, createProduct, listCategories }
+  /**
+   * multipart/form-data, not JSON - a File can't be serialized into a JSON
+   * body. $fetch/ofetch sets the correct Content-Type (with boundary) itself
+   * for a FormData body, so authHeaders' Authorization header is the only
+   * one this needs to add by hand.
+   */
+  function uploadProductImage(productId: number, image: File) {
+    const formData = new FormData()
+    formData.append('image', image)
+
+    return $fetch<{ data: Product }>(`${base}/products/${productId}/image`, {
+      method: 'POST',
+      body: formData,
+      headers: authHeaders(token.value),
+    })
+  }
+
+  return { listProducts, createProduct, listCategories, uploadProductImage }
 }

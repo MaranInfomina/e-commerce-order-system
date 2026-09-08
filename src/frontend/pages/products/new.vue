@@ -43,7 +43,7 @@ definePageMeta({
 
 const router = useRouter()
 const toast = useToast()
-const { createProduct, listCategories } = useProductsApi()
+const { createProduct, listCategories, uploadProductImage } = useProductsApi()
 
 const { data: categoriesResponse, error: categoriesError } = await useAsyncData('categories', () => listCategories())
 
@@ -56,7 +56,7 @@ const fieldErrors = ref<Record<string, string[]>>({})
 const formError = ref('')
 const submitting = ref(false)
 
-async function submit(payload: ProductInput) {
+async function submit(payload: ProductInput, image: File | null) {
   // The :disabled attribute already blocks a second click, but that guarantee
   // is incidental to the DOM patch timing rather than structural — make it
   // unconditional on the one action that creates data.
@@ -68,6 +68,21 @@ async function submit(payload: ProductInput) {
 
   try {
     const created = await createProduct(payload)
+
+    // The image is a second, separate request against the id this just
+    // returned - a failure here must not look like the product itself
+    // failed to save, since it didn't.
+    if (image) {
+      try {
+        await uploadProductImage(created.data.id, image)
+      }
+      catch (imageError) {
+        toast.error(`"${created.data.name}" was created, but the image failed to upload: ${parseApiError(imageError).message}`)
+        await router.push(`/products?search=${encodeURIComponent(created.data.name)}`)
+        return
+      }
+    }
+
     toast.success(`"${created.data.name}" was created.`)
     await router.push(`/products?search=${encodeURIComponent(created.data.name)}`)
   }

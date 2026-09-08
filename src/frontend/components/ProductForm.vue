@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import type { Category, ProductInput } from '~/utils/api'
 
 const props = defineProps<{
@@ -8,7 +8,7 @@ const props = defineProps<{
   submitting: boolean
 }>()
 
-const emit = defineEmits<{ submit: [payload: ProductInput] }>()
+const emit = defineEmits<{ submit: [payload: ProductInput, image: File | null] }>()
 
 const form = reactive({
   category_id: '',
@@ -21,6 +21,16 @@ const form = reactive({
   is_active: true,
 })
 
+// The image is a separate upload (POST /products/{id}/image) that needs a
+// real product id to target, so it can't be part of the ProductInput JSON
+// body above - the caller creates the product first, then uploads this file
+// against the id it gets back.
+const imageFile = ref<File | null>(null)
+
+function selectImage(event: Event) {
+  imageFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+}
+
 function submit() {
   emit('submit', {
     category_id: form.category_id === '' ? null : Number(form.category_id),
@@ -31,7 +41,7 @@ function submit() {
     price_cents: form.price_cents === '' ? null : Number(form.price_cents),
     stock_quantity: form.stock_quantity === '' ? null : Number(form.stock_quantity),
     is_active: form.is_active,
-  })
+  }, imageFile.value)
 }
 </script>
 
@@ -137,6 +147,18 @@ function submit() {
       <span v-if="props.errors.description" data-test="error-description" class="text-xs text-red-600">
         {{ props.errors.description.join(' ') }}
       </span>
+    </label>
+
+    <label class="col-span-2 flex flex-col gap-1 text-sm font-medium text-slate-600">
+      Product image (optional)
+      <input
+        data-test="field-image"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        class="text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+        @change="selectImage"
+      >
+      <span class="text-xs font-normal text-slate-400">JPEG, PNG, or WebP, up to 2MB.</span>
     </label>
 
     <label class="col-span-2 flex flex-row items-center gap-2 text-sm font-medium text-slate-600">
