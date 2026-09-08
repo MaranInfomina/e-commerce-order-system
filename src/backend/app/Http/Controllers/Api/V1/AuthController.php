@@ -18,10 +18,21 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 class AuthController extends Controller
 {
+    #[OA\Post(
+        path: '/api/v1/auth/register',
+        summary: 'Register a new customer account',
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/RegisterRequest')),
+        responses: [
+            new OA\Response(response: 201, description: 'Account created', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/User')])),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 429, description: 'Too many attempts', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function register(RegisterRequest $request): JsonResponse
     {
         $user = User::create([
@@ -42,6 +53,25 @@ class AuthController extends Controller
      * failed CR-3 before the entrypoint fallback existed. Only the action
      * that actually signs something depends on the key.
      */
+    #[OA\Post(
+        path: '/api/v1/auth/login',
+        summary: 'Exchange credentials for a bearer token',
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/LoginRequest')),
+        responses: [
+            new OA\Response(
+                response: 200,
+                description: 'Authenticated',
+                content: new OA\JsonContent(properties: [
+                    new OA\Property(property: 'token', type: 'string'),
+                    new OA\Property(property: 'token_type', type: 'string', example: 'Bearer'),
+                    new OA\Property(property: 'expires_in', type: 'integer', description: 'Seconds until the token expires.'),
+                ]),
+            ),
+            new OA\Response(response: 401, description: 'Invalid credentials', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 429, description: 'Too many attempts', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function login(LoginRequest $request, TokenService $tokens): JsonResponse
     {
         $credentials = $request->validated();
@@ -104,6 +134,15 @@ class AuthController extends Controller
      * controller's constructor was deliberately removed in Task 4 so that
      * register() cannot be brought down by a dependency it never uses.
      */
+    #[OA\Post(
+        path: '/api/v1/auth/logout',
+        summary: "Revoke the caller's current bearer token",
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 204, description: 'Token revoked'),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function logout(TokenDenylist $denylist): JsonResponse
     {
         /** @var JwtGuard $guard */
@@ -117,11 +156,31 @@ class AuthController extends Controller
         return response()->json(null, 204);
     }
 
+    #[OA\Get(
+        path: '/api/v1/auth/me',
+        summary: "Get the caller's own profile",
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'The current user', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/User')])),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function me(Request $request): JsonResponse
     {
         return UserResource::make($request->user())->response();
     }
 
+    #[OA\Patch(
+        path: '/api/v1/auth/me',
+        summary: "Update the caller's own profile",
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/UpdateProfileRequest')),
+        responses: [
+            new OA\Response(response: 200, description: 'Updated user', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/User')])),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function updateMe(UpdateProfileRequest $request): JsonResponse
     {
         $user = $request->user();

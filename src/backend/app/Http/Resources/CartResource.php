@@ -4,11 +4,24 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use OpenApi\Attributes as OA;
 
 /**
  * Wraps an already-resolved array shaped
  * ['items' => [['product' => Product, 'quantity' => int], ...]].
  */
+#[OA\Schema(
+    schema: 'Cart',
+    properties: [
+        new OA\Property(property: 'items', type: 'array', items: new OA\Items(properties: [
+            new OA\Property(property: 'product', ref: '#/components/schemas/Product'),
+            new OA\Property(property: 'quantity', type: 'integer'),
+            new OA\Property(property: 'line_total_cents', type: 'integer'),
+        ], type: 'object')),
+        new OA\Property(property: 'total_cents', type: 'integer'),
+        new OA\Property(property: 'item_count', type: 'integer'),
+    ],
+)]
 class CartResource extends JsonResource
 {
     /**

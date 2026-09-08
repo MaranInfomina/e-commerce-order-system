@@ -9,16 +9,37 @@ use App\Models\Product;
 use App\Repositories\CartRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CartController extends Controller
 {
     public function __construct(private readonly CartRepository $carts) {}
 
+    #[OA\Get(
+        path: '/api/v1/cart',
+        summary: "Get the caller's cart",
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'The cart', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Cart')])),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function show(Request $request): JsonResponse
     {
         return CartResource::make($this->resolve($request->user()->id))->response();
     }
 
+    #[OA\Post(
+        path: '/api/v1/cart/items',
+        summary: 'Add an item to the cart (increments an existing line)',
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/CartItemRequest')),
+        responses: [
+            new OA\Response(response: 201, description: 'Cart after the add', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Cart')])),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function addItem(CartItemRequest $request): JsonResponse
     {
         $data = $request->validated();
@@ -44,6 +65,20 @@ class CartController extends Controller
             ->setStatusCode(201);
     }
 
+    #[OA\Patch(
+        path: '/api/v1/cart/items/{product}',
+        summary: 'Set an exact quantity for a cart line',
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/CartItemRequest')),
+        responses: [
+            new OA\Response(response: 200, description: 'Cart after the update', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Cart')])),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function updateItem(CartItemRequest $request, Product $product): JsonResponse
     {
         // setQuantity, not increment: PATCH sets an exact quantity.
@@ -56,6 +91,18 @@ class CartController extends Controller
         return CartResource::make($this->resolve($request->user()->id))->response();
     }
 
+    #[OA\Delete(
+        path: '/api/v1/cart/items/{product}',
+        summary: 'Remove a line from the cart',
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'product', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: 'Item removed'),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function removeItem(Request $request, Product $product): JsonResponse
     {
         $this->carts->remove($request->user()->id, $product->id);
@@ -63,6 +110,15 @@ class CartController extends Controller
         return response()->json(null, 204);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/cart',
+        summary: 'Empty the cart',
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 204, description: 'Cart cleared'),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function clear(Request $request): JsonResponse
     {
         $this->carts->clear($request->user()->id);

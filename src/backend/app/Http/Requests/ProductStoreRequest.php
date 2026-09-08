@@ -4,7 +4,22 @@ namespace App\Http\Requests;
 
 use App\Models\Product;
 use Illuminate\Foundation\Http\FormRequest;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'ProductStoreRequest',
+    required: ['category_id', 'name', 'slug', 'sku', 'price_cents', 'stock_quantity'],
+    properties: [
+        new OA\Property(property: 'category_id', type: 'integer'),
+        new OA\Property(property: 'name', type: 'string', maxLength: 255),
+        new OA\Property(property: 'slug', type: 'string', maxLength: 255),
+        new OA\Property(property: 'sku', type: 'string', maxLength: 64),
+        new OA\Property(property: 'description', type: 'string', maxLength: 5000, nullable: true),
+        new OA\Property(property: 'price_cents', type: 'integer', minimum: 0),
+        new OA\Property(property: 'stock_quantity', type: 'integer', minimum: 0),
+        new OA\Property(property: 'is_active', type: 'boolean'),
+    ],
+)]
 class ProductStoreRequest extends FormRequest
 {
     public function authorize(): bool

@@ -4,7 +4,22 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'ProductUpdateRequest',
+    description: 'All fields are optional (sometimes-validated); only the fields present are updated.',
+    properties: [
+        new OA\Property(property: 'category_id', type: 'integer'),
+        new OA\Property(property: 'name', type: 'string', maxLength: 255),
+        new OA\Property(property: 'slug', type: 'string', maxLength: 255),
+        new OA\Property(property: 'sku', type: 'string', maxLength: 64),
+        new OA\Property(property: 'description', type: 'string', maxLength: 5000, nullable: true),
+        new OA\Property(property: 'price_cents', type: 'integer', minimum: 0),
+        new OA\Property(property: 'stock_quantity', type: 'integer', minimum: 0),
+        new OA\Property(property: 'is_active', type: 'boolean'),
+    ],
+)]
 class ProductUpdateRequest extends FormRequest
 {
     public function authorize(): bool

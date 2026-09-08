@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\ValidationException;
+use OpenApi\Attributes as OA;
 use Throwable;
 
 class OrderController extends Controller
@@ -27,6 +28,18 @@ class OrderController extends Controller
         private readonly CheckoutService $checkout,
     ) {}
 
+    #[OA\Post(
+        path: '/api/v1/orders',
+        summary: "Convert the caller's cart into an order",
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/OrderStoreRequest')),
+        responses: [
+            new OA\Response(response: 201, description: 'Order created', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Order')])),
+            new OA\Response(response: 200, description: 'Idempotent replay of an existing order'),
+            new OA\Response(response: 422, description: 'Validation failed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function store(OrderStoreRequest $request): JsonResponse
     {
         $user = $request->user();
@@ -95,6 +108,17 @@ class OrderController extends Controller
             ->setStatusCode($order->wasRecentlyCreated ? 201 : 200);
     }
 
+    #[OA\Get(
+        path: '/api/v1/orders',
+        summary: "List the caller's own orders",
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Orders', content: new OA\JsonContent(properties: [
+                new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/Order')),
+            ])),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function index(Request $request): AnonymousResourceCollection
     {
         $orders = Order::query()
@@ -113,6 +137,19 @@ class OrderController extends Controller
         return OrderResource::collection($orders);
     }
 
+    #[OA\Get(
+        path: '/api/v1/orders/{order}',
+        summary: 'Get a single order (owner or admin)',
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'order', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'The order', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Order')])),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 404, description: "Not found, or exists but isn't yours", content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function show(Request $request, string $order): OrderResource
     {
         // Same raw-string + ctype_digit pattern as ProductController::show:
@@ -134,6 +171,22 @@ class OrderController extends Controller
         return OrderResource::make($found);
     }
 
+    #[OA\Patch(
+        path: '/api/v1/orders/{order}/status',
+        summary: 'Advance an order to shipped or delivered (admin only)',
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'order', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        requestBody: new OA\RequestBody(content: new OA\JsonContent(ref: '#/components/schemas/OrderStatusUpdateRequest')),
+        responses: [
+            new OA\Response(response: 200, description: 'Order after the transition', content: new OA\JsonContent(properties: [new OA\Property(property: 'data', ref: '#/components/schemas/Order')])),
+            new OA\Response(response: 422, description: 'Validation failed, or an illegal status transition', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 401, description: 'Unauthenticated', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 403, description: 'Not an admin', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+            new OA\Response(response: 404, description: 'Not found', content: new OA\JsonContent(ref: '#/components/schemas/ErrorEnvelope')),
+        ],
+    )]
     public function updateStatus(
         OrderStatusUpdateRequest $request,
         Order $order,

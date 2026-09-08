@@ -5,7 +5,16 @@ namespace App\Http\Requests;
 use App\Rules\FitsBcrypt;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'LoginRequest',
+    required: ['email', 'password'],
+    properties: [
+        new OA\Property(property: 'email', type: 'string', format: 'email'),
+        new OA\Property(property: 'password', type: 'string', format: 'password'),
+    ],
+)]
 class LoginRequest extends FormRequest
 {
     public function authorize(): bool

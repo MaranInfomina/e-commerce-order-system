@@ -3,7 +3,15 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use OpenApi\Attributes as OA;
 
+#[OA\Schema(
+    schema: 'ProductImageRequest',
+    required: ['image'],
+    properties: [
+        new OA\Property(property: 'image', type: 'string', format: 'binary', description: 'jpeg, jpg, png, or webp, max 2MB (NFR-15).'),
+    ],
+)]
 class ProductImageRequest extends FormRequest
 {
     public function authorize(): bool
