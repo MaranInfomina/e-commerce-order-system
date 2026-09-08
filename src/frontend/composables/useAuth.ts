@@ -26,9 +26,11 @@ export function useAuth() {
   // localStorage. The cookie is chosen for SSR readability, not as a defence.
   const token = useCookie<string | null>('coe_token', {
     sameSite: 'lax',
-    // Secure would break plain-HTTP local development; Milestone 4 adds
-    // HTTPS and should set this to true then.
-    secure: false,
+    // Milestone 4 added HTTPS (nginx redirects every plain-HTTP browser page
+    // to it), so the cookie can require it too — a plain-HTTP request (an
+    // old bookmark, a typed http:// URL) would otherwise still present the
+    // token in the clear on that one request before the redirect ever fires.
+    secure: true,
     maxAge: 60 * 60,
   })
 
