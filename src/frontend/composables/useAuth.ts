@@ -34,6 +34,7 @@ export function useAuth() {
     maxAge: 60 * 60,
   })
 
+  const toast = useToast()
   const config = useRuntimeConfig()
 
   const base = resolveApiBase(import.meta.server, {
@@ -57,6 +58,7 @@ export function useAuth() {
     })
 
     token.value = response.token
+    toast.success('Signed in.')
   }
 
   async function logout(): Promise<void> {
@@ -75,6 +77,7 @@ export function useAuth() {
     }
 
     token.value = null
+    toast.success('Signed out.')
   }
 
   return { token, isAuthenticated, isAdmin, login, logout }

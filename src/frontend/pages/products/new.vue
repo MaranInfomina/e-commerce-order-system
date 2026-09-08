@@ -42,6 +42,7 @@ definePageMeta({
 // JavaScript, or uses the API by hand is stopped there, not here.
 
 const router = useRouter()
+const toast = useToast()
 const { createProduct, listCategories } = useProductsApi()
 
 const { data: categoriesResponse, error: categoriesError } = await useAsyncData('categories', () => listCategories())
@@ -67,14 +68,18 @@ async function submit(payload: ProductInput) {
 
   try {
     const created = await createProduct(payload)
+    toast.success(`"${created.data.name}" was created.`)
     await router.push(`/products?search=${encodeURIComponent(created.data.name)}`)
   }
   catch (error) {
     const parsed = parseApiError(error)
     fieldErrors.value = parsed.fields
     // Only show the banner when no field owns the problem, so the user is
-    // not told twice about the same thing.
+    // not told twice about the same thing. The toast fires either way — it's
+    // the immediate "that didn't work" signal, whether or not the detail
+    // ends up inline in the form.
     formError.value = Object.keys(parsed.fields).length > 0 ? '' : parsed.message
+    toast.error(parsed.message)
   }
   finally {
     submitting.value = false

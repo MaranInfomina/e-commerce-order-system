@@ -19,6 +19,8 @@ async function signOut() {
 <template>
   <NuxtRouteAnnouncer />
 
+  <ToastStack />
+
   <div class="flex min-h-screen flex-col">
     <header class="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
