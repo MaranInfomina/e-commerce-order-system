@@ -84,31 +84,35 @@ describe('parseApiError', () => {
 })
 
 describe('formatCents', () => {
-  it('formats a normal value', () => {
-    expect(formatCents(204010)).toBe('2040.10')
+  it('formats a normal value with a dollar sign', () => {
+    expect(formatCents(204010)).toBe('$2,040.10')
   })
 
   it('formats zero', () => {
-    expect(formatCents(0)).toBe('0.00')
+    expect(formatCents(0)).toBe('$0.00')
   })
 
   it('pads a fractional part under ten cents', () => {
-    expect(formatCents(5)).toBe('0.05')
+    expect(formatCents(5)).toBe('$0.05')
   })
 
   it('formats a value under a full unit but at least ten cents', () => {
-    expect(formatCents(50)).toBe('0.50')
+    expect(formatCents(50)).toBe('$0.50')
   })
 
   it('formats a value one cent under a whole unit', () => {
-    expect(formatCents(1999)).toBe('19.99')
+    expect(formatCents(1999)).toBe('$19.99')
   })
 
   it('formats an exact multiple of a whole unit with no fractional remainder', () => {
-    expect(formatCents(500)).toBe('5.00')
+    expect(formatCents(500)).toBe('$5.00')
   })
 
-  it('formats a negative value with a sign prefix', () => {
-    expect(formatCents(-150)).toBe('-1.50')
+  it('formats a negative value with the sign before the dollar sign', () => {
+    expect(formatCents(-150)).toBe('-$1.50')
+  })
+
+  it('adds thousands separators to large whole-dollar amounts', () => {
+    expect(formatCents(123456789)).toBe('$1,234,567.89')
   })
 })

@@ -172,7 +172,10 @@ export function formatCents(cents: number): string {
   const fraction = String(Math.abs(cents) % 100).padStart(2, '0')
   const sign = cents < 0 ? '-' : ''
 
-  return `${sign}${whole}.${fraction}`
+  // toLocaleString only adds thousands separators to an already-integer
+  // whole-dollar count derived above via integer division - it never touches
+  // the fractional cents, so this stays exact money math, not float display.
+  return `${sign}$${whole.toLocaleString('en-US')}.${fraction}`
 }
 
 /**
