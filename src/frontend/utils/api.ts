@@ -74,6 +74,23 @@ export interface ProductListState {
   sort: string
 }
 
+export interface CartItem {
+  product: Product
+  quantity: number
+  line_total_cents: number
+}
+
+export interface Cart {
+  items: CartItem[]
+  total_cents: number
+  item_count: number
+}
+
+export interface OrderInput {
+  shipping_address: string
+  notes: string | null
+}
+
 export interface ProductInput {
   category_id: number | null
   name: string

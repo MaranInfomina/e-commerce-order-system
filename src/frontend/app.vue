@@ -29,12 +29,20 @@ async function signOut() {
         </NuxtLink>
 
         <nav class="flex items-center gap-4">
-          <NuxtLink
-            to="/orders"
-            class="hidden text-sm font-medium text-slate-600 hover:text-indigo-600 sm:block"
-          >
-            Your orders
-          </NuxtLink>
+          <template v-if="isAuthenticated">
+            <NuxtLink
+              to="/cart"
+              class="hidden text-sm font-medium text-slate-600 hover:text-indigo-600 sm:block"
+            >
+              Cart
+            </NuxtLink>
+            <NuxtLink
+              to="/orders"
+              class="hidden text-sm font-medium text-slate-600 hover:text-indigo-600 sm:block"
+            >
+              Your orders
+            </NuxtLink>
+          </template>
 
           <button
             v-if="isAuthenticated"

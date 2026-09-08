@@ -1,7 +1,34 @@
 <script setup lang="ts">
-import { formatCents, type Product } from '~/utils/api'
+import { formatCents, parseApiError, type Product } from '~/utils/api'
 
 const props = defineProps<{ products: Product[] }>()
+
+const { isAuthenticated } = useAuth()
+const { addItem } = useCartApi()
+const toast = useToast()
+
+// Tracks which cards have a request in flight, so a click on one product
+// disables only that card's button rather than every card on the page.
+const addingIds = ref<Set<number>>(new Set())
+
+async function add(product: Product) {
+  if (addingIds.value.has(product.id)) return
+
+  addingIds.value = new Set(addingIds.value).add(product.id)
+
+  try {
+    await addItem(product.id, 1)
+    toast.success(`Added "${product.name}" to your cart.`)
+  }
+  catch (error) {
+    toast.error(parseApiError(error).message)
+  }
+  finally {
+    const next = new Set(addingIds.value)
+    next.delete(product.id)
+    addingIds.value = next
+  }
+}
 </script>
 
 <template>
@@ -63,6 +90,24 @@ const props = defineProps<{ products: Product[] }>()
             In stock
           </span>
         </div>
+
+        <NuxtLink
+          v-if="!isAuthenticated"
+          to="/login"
+          class="mt-3 block rounded-md border border-slate-300 px-3 py-1.5 text-center text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+        >
+          Sign in to buy
+        </NuxtLink>
+        <button
+          v-else
+          type="button"
+          :disabled="!product.is_active || product.stock_quantity === 0 || addingIds.has(product.id)"
+          :data-test="`add-to-cart-${product.id}`"
+          class="mt-3 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+          @click="add(product)"
+        >
+          {{ addingIds.has(product.id) ? 'Adding…' : 'Add to cart' }}
+        </button>
       </div>
     </article>
   </div>

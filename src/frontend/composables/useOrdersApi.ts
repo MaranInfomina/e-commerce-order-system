@@ -1,4 +1,4 @@
-import { authHeaders, resolveApiBase, type Order } from '~/utils/api'
+import { authHeaders, resolveApiBase, type Order, type OrderInput } from '~/utils/api'
 
 export function useOrdersApi() {
   const config = useRuntimeConfig()
@@ -21,5 +21,14 @@ export function useOrdersApi() {
     })
   }
 
-  return { listOrders, getOrder }
+  /** Converts the caller's cart into an order - see POST /orders. The API clears the cart server-side on success. */
+  function createOrder(payload: OrderInput) {
+    return $fetch<{ data: Order }>(`${base}/orders`, {
+      method: 'POST',
+      headers: authHeaders(token.value),
+      body: payload,
+    })
+  }
+
+  return { listOrders, getOrder, createOrder }
 }
