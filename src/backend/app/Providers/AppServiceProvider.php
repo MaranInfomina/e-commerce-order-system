@@ -75,6 +75,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('register', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
         RateLimiter::for('login', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
 
+        // Per-user, not per-IP, unlike register/login above — checkout
+        // always has an authenticated user by the time this middleware
+        // runs, and keying on IP would let one office/NAT's shoppers share
+        // (and exhaust) a single bucket.
+        RateLimiter::for('checkout', fn (Request $request) => Limit::perMinute(20)->by($request->user()->id));
+
         // `artisan queue:work` persists a failed job into failed_jobs itself
         // (Illuminate\Queue\Console\WorkCommand::logFailedJob(), registered
         // only while that command is running) — the queue-worker container's
